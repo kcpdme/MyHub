@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <h1>Personal Automation Hub</h1>
+        <p>Capture, plan, and send reminders to Telegram.</p>
+      </header>
+
+      <section class="panel auth-panel">
+        <label for="apiKey">API Key</label>
+        <div class="row">
+          <input id="apiKey" type="password" placeholder="Paste X-API-Key" />
+          <button id="saveKeyBtn" type="button">Save</button>
+        </div>
+        <div id="apiKeyStatus" class="muted"></div>
+        <div id="appStatus" class="status-banner" aria-live="polite"></div>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <h2>Quick Capture</h2>
+          <form id="captureForm">
+            <textarea id="captureContent" placeholder="Idea, note, link context..." required></textarea>
+            <input id="captureUrl" type="url" placeholder="Optional URL" />
+            <button type="submit">Add Capture</button>
+          </form>
+          <ul id="capturesList" class="list"></ul>
+        </article>
+
+        <article class="panel">
+          <h2>Tasks</h2>
+          <form id="taskForm">
+            <input id="taskTitle" type="text" placeholder="Task title" required />
+            <select id="taskPriority">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+            </select>
+            <button type="submit">Add Task</button>
+          </form>
+          <ul id="tasksList" class="list"></ul>
+        </article>
+
+        <article class="panel">
+          <h2>Encrypted Notes</h2>
+          <form id="noteForm">
+            <input id="noteTitle" type="text" placeholder="Optional title" />
+            <textarea id="noteContent" placeholder="Write private note (encrypted at rest)" required></textarea>
+            <button type="submit">Save Note</button>
+          </form>
+          <ul id="notesList" class="list"></ul>
+        </article>
+
+        <article class="panel">
+          <h2>Reminders</h2>
+          <form id="reminderForm">
+            <label class="field-label" for="reminderMessage">Message</label>
+            <input id="reminderMessage" type="text" placeholder="Reminder message" required />
+            <label class="field-label" for="reminderChannel">Channel</label>
+            <select id="reminderChannel">
+              <option value="telegram">Telegram</option>
+            </select>
+            <label class="field-label" for="reminderTarget">Target</label>
+            <input
+              id="reminderTarget"
+              type="text"
+              placeholder="telegram chat_id"
+              value="{{ default_telegram_target }}"
+              data-default-target="{{ default_telegram_target }}"
+              required
+            />
+            <div class="schedule-card">
+              <div class="schedule-header">Schedule</div>
+              <div class="schedule-grid">
+                <div>
+                  <label class="field-label" for="reminderDate">Date</label>
+                  <input id="reminderDate" type="date" required />
+                </div>
+                <div>
+                  <label class="field-label" for="reminderTime">Time</label>
+                  <input id="reminderTime" type="time" step="60" required />
+                </div>
+              </div>
+              <div class="quick-time">
+                <button type="button" class="ghost preset-btn" data-minutes="15">+15m</button>
+                <button type="button" class="ghost preset-btn" data-minutes="30">+30m</button>
+                <button type="button" class="ghost preset-btn" data-minutes="60">+1h</button>
+                <button type="button" class="ghost preset-btn" data-preset="tomorrow-0900">Tomorrow 09:00</button>
+              </div>
+              <div id="reminderTimeHint" class="muted"></div>
+            </div>
+            <label class="inline-check">
+              <input id="reminderRecurring" type="checkbox" />
+              Repeat this reminder
+            </label>
+            <input id="recurrenceMinutes" type="number" min="1" step="1" placeholder="Repeat every N minutes" />
+            <button type="submit">Schedule Reminder</button>
+          </form>
+          <ul id="remindersList" class="list"></ul>
+        </article>
+      </section>
+
+      <section class="panel">
+        <h2>Today Summary</h2>
+        <div id="summaryGrid" class="summary-grid"></div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

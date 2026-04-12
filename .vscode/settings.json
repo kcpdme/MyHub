@@ -1,0 +1,17 @@
+{
+  "python.analysis.languageServerMode": "light",
+  "python.analysis.indexing": false,
+  "python.analysis.typeCheckingMode": "off",
+  "python.analysis.diagnosticMode": "openFilesOnly",
+  "typescript.tsserver.maxTsServerMemory": 512,
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/.venv/**": true
+  },
+  "search.exclude": {
+    "**/.venv/**": true,
+    "**/node_modules/**": true
+  }
+}

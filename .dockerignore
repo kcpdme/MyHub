@@ -1,0 +1,8 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+automation_hub.db
+data
+.vscode

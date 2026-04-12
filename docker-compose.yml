@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    container_name: automation-hub
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: sqlite:////data/automation_hub.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
