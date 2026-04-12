@@ -171,6 +171,16 @@ def create_capture(payload: schemas.CaptureCreate, db: Session = Depends(get_db)
     return capture
 
 
+@router.delete("/captures/{capture_id}")
+def delete_capture(capture_id: int, db: Session = Depends(get_db)):
+    capture = db.query(models.Capture).filter(models.Capture.id == capture_id).first()
+    if not capture:
+        raise HTTPException(status_code=404, detail="Capture not found")
+    db.delete(capture)
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/tasks", response_model=list[schemas.TaskOut])
 def list_tasks(db: Session = Depends(get_db)):
     return db.query(models.Task).order_by(models.Task.created_at.desc()).limit(200).all()
@@ -216,6 +226,26 @@ def update_task(task_id: int, payload: schemas.TaskUpdate, db: Session = Depends
     db.commit()
     db.refresh(task)
     return task
+
+
+@router.delete("/tasks/{task_id}")
+def delete_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.query(models.Task).filter(models.Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    db.delete(task)
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/reminders/{reminder_id}")
+def delete_reminder(reminder_id: int, db: Session = Depends(get_db)):
+    reminder = db.query(models.Reminder).filter(models.Reminder.id == reminder_id).first()
+    if not reminder:
+        raise HTTPException(status_code=404, detail="Reminder not found")
+    db.delete(reminder)
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/reminders", response_model=list[schemas.ReminderOut])

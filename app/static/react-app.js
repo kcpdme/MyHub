@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "https://esm.sh/react@18.3.1";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "https://esm.sh/react@18.3.1";
 import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
 import htm from "https://esm.sh/htm@3.1.1";
 
@@ -7,29 +7,71 @@ const rootEl = document.getElementById("root");
 const defaultTarget = rootEl?.dataset?.defaultTelegramTarget || "";
 const keyStorage = "automation_hub_api_key";
 
+/* ─── SVG Icon components (inline Lucide-style) ─── */
+function Icon({ name, size = 18 }) {
+  const s = size;
+  const icons = {
+    zap: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>`,
+    "layout-dashboard": html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>`,
+    "pen-line": html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></svg>`,
+    inbox: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>`,
+    "check-square": html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 12 2 2 4-4"/></svg>`,
+    "file-lock": html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><rect width="8" height="6" x="8" y="12" rx="1"/><path d="M10 12v-2a2 2 0 1 1 4 0v2"/></svg>`,
+    bell: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>`,
+    settings: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`,
+    search: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`,
+    plus: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>`,
+    trash: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`,
+    check: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`,
+    undo: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>`,
+    send: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>`,
+    archive: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`,
+    "arrow-up-right": html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>`,
+    "refresh-cw": html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>`,
+    "log-out": html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>`,
+    keyboard: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.001"/><path d="M10 8h.001"/><path d="M14 8h.001"/><path d="M18 8h.001"/><path d="M8 12h.001"/><path d="M12 12h.001"/><path d="M16 12h.001"/><path d="M7 16h10"/></svg>`,
+    menu: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>`,
+    "bar-chart": html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" x2="12" y1="20" y2="10"/><line x1="18" x2="18" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="16"/></svg>`,
+    tag: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>`,
+    link: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
+    clock: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+    repeat: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>`,
+    key: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></svg>`,
+    save: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>`,
+  };
+  return icons[name] || null;
+}
+
+/* ─── Helpers ─── */
 function formatDate(value) {
-  if (!value) return "-";
-  return new Date(value).toLocaleString();
+  if (!value) return "—";
+  return new Date(value).toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
 }
 
-function navLabel(id) {
-  if (id === "summary") return "Overview";
-  if (id === "captures") return "Captures";
-  if (id === "inbox") return "Inbox";
-  if (id === "tasks") return "Tasks";
-  if (id === "notes") return "Notes";
-  if (id === "reminders") return "Reminders";
-  return "Settings";
+function formatDateShort(value) {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString(undefined, {
+    month: "short", day: "numeric",
+  });
 }
 
-function sectionSubtitle(id) {
-  if (id === "summary") return "Operational health and activity overview.";
-  if (id === "captures") return "Capture ideas, links, and context instantly.";
-  if (id === "inbox") return "Review and triage Telegram intake quickly.";
-  if (id === "tasks") return "Plan and track execution priorities.";
-  if (id === "notes") return "Store and manage encrypted private notes.";
-  if (id === "reminders") return "Schedule outbound reminders and follow-ups.";
-  return "Configure access, API keys, and workspace preferences.";
+function relativeTime(value) {
+  if (!value) return "";
+  const diff = new Date(value) - Date.now();
+  const absDiff = Math.abs(diff);
+  const mins = Math.floor(absDiff / 60000);
+  const hours = Math.floor(mins / 60);
+  const days = Math.floor(hours / 24);
+  if (diff > 0) {
+    if (mins < 60) return `in ${mins}m`;
+    if (hours < 24) return `in ${hours}h`;
+    return `in ${days}d`;
+  }
+  if (mins < 60) return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${days}d ago`;
 }
 
 function toIsoLocalDateTime(minutesFromNow = 15) {
@@ -43,6 +85,27 @@ function toIsoLocalDateTime(minutesFromNow = 15) {
   return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
 }
 
+const NAV_CONFIG = [
+  { id: "summary", label: "Overview", icon: "layout-dashboard" },
+  { id: "captures", label: "Captures", icon: "pen-line" },
+  { id: "inbox", label: "Inbox", icon: "inbox" },
+  { id: "tasks", label: "Tasks", icon: "check-square" },
+  { id: "notes", label: "Notes", icon: "file-lock" },
+  { id: "reminders", label: "Reminders", icon: "bell" },
+  { id: "settings", label: "Settings", icon: "settings" },
+];
+
+const SECTION_META = {
+  summary: { title: "Overview", subtitle: "Activity snapshot and operational health at a glance." },
+  captures: { title: "Quick Capture", subtitle: "Save ideas, links, and context before they're lost." },
+  inbox: { title: "Telegram Inbox", subtitle: "Review and triage incoming items from your bot." },
+  tasks: { title: "Task Board", subtitle: "Track priorities and execution progress." },
+  notes: { title: "Encrypted Notes", subtitle: "Secure, encrypted notes stored at rest." },
+  reminders: { title: "Reminders", subtitle: "Schedule delivery with optional recurrence." },
+  settings: { title: "Settings", subtitle: "Configure keys, preferences, and workspace." },
+};
+
+/* ─── Main App ─── */
 function App() {
   const [section, setSection] = useState(localStorage.getItem("hub_section") || "summary");
   const [density, setDensity] = useState(localStorage.getItem("hub_density") || "comfortable");
@@ -52,6 +115,8 @@ function App() {
   const [statusKind, setStatusKind] = useState("info");
   const [busy, setBusy] = useState(false);
   const [toasts, setToasts] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   const [captures, setCaptures] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -72,13 +137,16 @@ function App() {
     recurrenceMinutes: "",
   });
 
-  function addToast(message, kind = "info") {
+  const searchRef = useRef(null);
+
+  /* ─── Toast System ─── */
+  const addToast = useCallback((message, kind = "info") => {
     const id = Date.now() + Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, message, kind }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4500);
-  }
+    }, 4000);
+  }, []);
 
   function setAppStatus(message, kind = "info") {
     setStatus(message);
@@ -86,49 +154,36 @@ function App() {
     addToast(message, kind);
   }
 
+  /* ─── API Helper ─── */
   async function api(path, options = {}) {
-    const headers = {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    };
+    const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
     if (apiKey.trim()) headers["X-API-Key"] = apiKey.trim();
-
     const response = await fetch(path, { ...options, headers });
     const text = await response.text();
     let data = null;
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      data = null;
-    }
-
+    try { data = text ? JSON.parse(text) : null; } catch { data = null; }
     if (!response.ok) {
       const detail = data?.detail || text || response.statusText;
-      if (response.status === 401 && !apiKey.trim()) {
-        window.location.href = "/";
-      }
+      if (response.status === 401 && !apiKey.trim()) window.location.href = "/";
       throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
     }
     return data;
   }
 
+  /* ─── Data Refresh ─── */
   async function refreshAll() {
     try {
       setBusy(true);
-      const [capturesData, tasksData, notesData, remindersData, inboxData, summaryData] = await Promise.all([
-        api("/api/captures"),
-        api("/api/tasks"),
-        api("/api/notes"),
-        api("/api/reminders"),
-        api("/api/inbox"),
-        api("/api/summary/today"),
+      const [cap, tsk, nts, rem, ibx, sum] = await Promise.all([
+        api("/api/captures"), api("/api/tasks"), api("/api/notes"),
+        api("/api/reminders"), api("/api/inbox"), api("/api/summary/today"),
       ]);
-      setCaptures(capturesData || []);
-      setTasks(tasksData || []);
-      setNotes(notesData || []);
-      setReminders(remindersData || []);
-      setInboxItems(inboxData || []);
-      setSummary(summaryData || null);
+      setCaptures(cap || []);
+      setTasks(tsk || []);
+      setNotes(nts || []);
+      setReminders(rem || []);
+      setInboxItems(ibx || []);
+      setSummary(sum || null);
     } catch (err) {
       setAppStatus(`Load failed: ${err.message}`, "error");
     } finally {
@@ -136,63 +191,44 @@ function App() {
     }
   }
 
-  useEffect(() => {
-    localStorage.setItem("hub_section", section);
-  }, [section]);
+  /* ─── Effects ─── */
+  useEffect(() => { localStorage.setItem("hub_section", section); }, [section]);
+  useEffect(() => { localStorage.setItem("hub_density", density); }, [density]);
+  useEffect(() => { refreshAll(); }, []);
 
   useEffect(() => {
-    localStorage.setItem("hub_density", density);
-  }, [density]);
-
-  useEffect(() => {
-    const onResize = () => {
-      if (window.innerWidth > 880) {
-        setSidebarOpen(true);
-      }
-    };
+    const onResize = () => { if (window.innerWidth > 900) setSidebarOpen(true); };
     onResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  /* ─── Keyboard Shortcuts ─── */
   useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key === "Escape" && sidebarOpen && window.innerWidth <= 900) {
-        setSidebarOpen(false);
+    const onKeyDown = (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+      if (e.key === "Escape") {
+        if (showShortcuts) { setShowShortcuts(false); return; }
+        if (sidebarOpen && window.innerWidth <= 900) { setSidebarOpen(false); return; }
       }
+      if (e.key === "?") { setShowShortcuts((v) => !v); return; }
+      if (e.key === "/") { e.preventDefault(); searchRef.current?.focus(); return; }
+      if (e.key === "r" && !e.ctrlKey && !e.metaKey) { refreshAll(); return; }
+      const navKeys = { "1": "summary", "2": "captures", "3": "inbox", "4": "tasks", "5": "notes", "6": "reminders", "7": "settings" };
+      if (navKeys[e.key]) { openSection(navKeys[e.key]); return; }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [sidebarOpen]);
+  }, [showShortcuts, sidebarOpen]);
 
+  /* ─── Navigation ─── */
   function openSection(id) {
     setSection(id);
-    if (window.innerWidth <= 880) {
-      setSidebarOpen(false);
-    }
+    setSearchQuery("");
+    if (window.innerWidth <= 900) setSidebarOpen(false);
   }
 
-  function focusSectionInput() {
-    const firstField = document.querySelector(".section-panel input, .section-panel textarea, .section-panel select");
-    if (firstField) {
-      firstField.focus();
-    }
-  }
-
-  function renderEmptyState(title, hint, actionLabel = "", onAction = focusSectionInput) {
-    return html`<li className="empty-state-card">
-      <div className="empty-state-title">${title}</div>
-      <div className="muted">${hint}</div>
-      ${actionLabel
-        ? html`<button className="ghost empty-cta" onClick=${onAction}>${actionLabel}</button>`
-        : ""}
-    </li>`;
-  }
-
-  useEffect(() => {
-    refreshAll();
-  }, []);
-
+  /* ─── CRUD: Captures ─── */
   async function submitCapture(e) {
     e.preventDefault();
     try {
@@ -200,11 +236,18 @@ function App() {
       setCaptureForm({ content: "", url: "" });
       await refreshAll();
       setAppStatus("Capture saved.", "success");
-    } catch (err) {
-      setAppStatus(`Capture failed: ${err.message}`, "error");
-    }
+    } catch (err) { setAppStatus(`Capture failed: ${err.message}`, "error"); }
   }
 
+  async function deleteCapture(id) {
+    try {
+      await api(`/api/captures/${id}`, { method: "DELETE" });
+      await refreshAll();
+      setAppStatus("Capture deleted.", "success");
+    } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
+  }
+
+  /* ─── CRUD: Tasks ─── */
   async function submitTask(e) {
     e.preventDefault();
     try {
@@ -216,9 +259,7 @@ function App() {
       setTaskForm({ title: "", priority: "medium", dueDate: "" });
       await refreshAll();
       setAppStatus("Task created.", "success");
-    } catch (err) {
-      setAppStatus(`Task failed: ${err.message}`, "error");
-    }
+    } catch (err) { setAppStatus(`Task failed: ${err.message}`, "error"); }
   }
 
   async function toggleTask(item) {
@@ -229,11 +270,18 @@ function App() {
       });
       await refreshAll();
       setAppStatus("Task updated.", "success");
-    } catch (err) {
-      setAppStatus(`Task update failed: ${err.message}`, "error");
-    }
+    } catch (err) { setAppStatus(`Update failed: ${err.message}`, "error"); }
   }
 
+  async function deleteTask(id) {
+    try {
+      await api(`/api/tasks/${id}`, { method: "DELETE" });
+      await refreshAll();
+      setAppStatus("Task deleted.", "success");
+    } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
+  }
+
+  /* ─── CRUD: Notes ─── */
   async function submitNote(e) {
     e.preventDefault();
     try {
@@ -241,9 +289,7 @@ function App() {
       setNoteForm({ title: "", content: "" });
       await refreshAll();
       setAppStatus("Encrypted note saved.", "success");
-    } catch (err) {
-      setAppStatus(`Note failed: ${err.message}`, "error");
-    }
+    } catch (err) { setAppStatus(`Note failed: ${err.message}`, "error"); }
   }
 
   async function deleteNote(id) {
@@ -251,35 +297,24 @@ function App() {
       await api(`/api/notes/${id}`, { method: "DELETE" });
       await refreshAll();
       setAppStatus("Note deleted.", "success");
-    } catch (err) {
-      setAppStatus(`Delete failed: ${err.message}`, "error");
-    }
+    } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
   }
 
+  /* ─── CRUD: Reminders ─── */
   async function submitReminder(e) {
     e.preventDefault();
     try {
       const payload = {
-        message: reminderForm.message,
-        channel: "telegram",
-        target: reminderForm.target,
+        message: reminderForm.message, channel: "telegram", target: reminderForm.target,
         remind_at: new Date(reminderForm.remindAt).toISOString(),
         is_recurring: reminderForm.recurring,
         recurrence_minutes: reminderForm.recurring && reminderForm.recurrenceMinutes ? Number(reminderForm.recurrenceMinutes) : null,
       };
       await api("/api/reminders", { method: "POST", body: JSON.stringify(payload) });
-      setReminderForm({
-        message: "",
-        target: defaultTarget,
-        remindAt: toIsoLocalDateTime(15),
-        recurring: false,
-        recurrenceMinutes: "",
-      });
+      setReminderForm({ message: "", target: defaultTarget, remindAt: toIsoLocalDateTime(15), recurring: false, recurrenceMinutes: "" });
       await refreshAll();
       setAppStatus("Reminder scheduled.", "success");
-    } catch (err) {
-      setAppStatus(`Reminder failed: ${err.message}`, "error");
-    }
+    } catch (err) { setAppStatus(`Reminder failed: ${err.message}`, "error"); }
   }
 
   async function sendNow(id) {
@@ -287,53 +322,43 @@ function App() {
       await api(`/api/reminders/${id}/send-now`, { method: "POST" });
       await refreshAll();
       setAppStatus("Reminder sent.", "success");
-    } catch (err) {
-      setAppStatus(`Send failed: ${err.message}`, "error");
-    }
+    } catch (err) { setAppStatus(`Send failed: ${err.message}`, "error"); }
   }
 
-  async function analyzeInbox(id) {
+  async function deleteReminder(id) {
     try {
-      setAppStatus("Analyzing item with AI...", "info");
-      const resp = await api(`/api/inbox/${id}/analyze`, { method: "POST" });
+      await api(`/api/reminders/${id}`, { method: "DELETE" });
       await refreshAll();
-      setAppStatus(`Item categorized: ${resp.tags}`, "success");
-    } catch (err) {
-      setAppStatus(`Analysis failed: ${err.message}`, "error");
-    }
+      setAppStatus("Reminder deleted.", "success");
+    } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
   }
 
+  /* ─── Inbox Actions ─── */
   async function archiveInbox(id) {
-    try {
-      await api(`/api/inbox/${id}/archive`, { method: "POST" });
-      await refreshAll();
-      setAppStatus("Inbox item archived.", "success");
-    } catch (err) {
-      setAppStatus(`Archive failed: ${err.message}`, "error");
-    }
+    try { await api(`/api/inbox/${id}/archive`, { method: "POST" }); await refreshAll(); setAppStatus("Archived.", "success"); }
+    catch (err) { setAppStatus(`Archive failed: ${err.message}`, "error"); }
   }
 
   async function inboxToCapture(id) {
-    try {
-      await api(`/api/inbox/${id}/to-capture`, { method: "POST" });
-      await refreshAll();
-      setAppStatus("Inbox item promoted to capture.", "success");
-    } catch (err) {
-      setAppStatus(`Promote failed: ${err.message}`, "error");
-    }
+    try { await api(`/api/inbox/${id}/to-capture`, { method: "POST" }); await refreshAll(); setAppStatus("Promoted to capture.", "success"); }
+    catch (err) { setAppStatus(`Promote failed: ${err.message}`, "error"); }
   }
 
   async function inboxToTask(id) {
     try {
-      await api(`/api/inbox/${id}/to-task`, {
-        method: "POST",
-        body: JSON.stringify({ priority: "medium" }),
-      });
+      await api(`/api/inbox/${id}/to-task`, { method: "POST", body: JSON.stringify({ priority: "medium" }) });
       await refreshAll();
-      setAppStatus("Inbox item promoted to task.", "success");
-    } catch (err) {
-      setAppStatus(`Promote failed: ${err.message}`, "error");
-    }
+      setAppStatus("Promoted to task.", "success");
+    } catch (err) { setAppStatus(`Promote failed: ${err.message}`, "error"); }
+  }
+
+  async function analyzeInbox(id) {
+    try {
+      setAppStatus("Analyzing…", "info");
+      const resp = await api(`/api/inbox/${id}/analyze`, { method: "POST" });
+      await refreshAll();
+      setAppStatus(`Tagged: ${resp.tags}`, "success");
+    } catch (err) { setAppStatus(`Analysis failed: ${err.message}`, "error"); }
   }
 
   function itemCanPreview(item) {
@@ -345,236 +370,545 @@ function App() {
     window.location.href = "/";
   }
 
-  const filteredTasks = useMemo(
-    () => (taskFilter === "all" ? tasks : tasks.filter((t) => t.status === taskFilter)),
-    [tasks, taskFilter],
-  );
+  /* ─── Filtering ─── */
+  const filteredTasks = useMemo(() => {
+    let items = taskFilter === "all" ? tasks : tasks.filter((t) => t.status === taskFilter);
+    if (searchQuery && section === "tasks") {
+      const q = searchQuery.toLowerCase();
+      items = items.filter((t) => t.title.toLowerCase().includes(q));
+    }
+    return items;
+  }, [tasks, taskFilter, searchQuery, section]);
 
-  const navItems = ["summary", "captures", "inbox", "tasks", "notes", "reminders", "settings"];
+  const filteredCaptures = useMemo(() => {
+    if (!searchQuery || section !== "captures") return captures;
+    const q = searchQuery.toLowerCase();
+    return captures.filter((c) => c.content.toLowerCase().includes(q) || (c.url || "").toLowerCase().includes(q));
+  }, [captures, searchQuery, section]);
+
+  const filteredNotes = useMemo(() => {
+    if (!searchQuery || section !== "notes") return notes;
+    const q = searchQuery.toLowerCase();
+    return notes.filter((n) => (n.title || "").toLowerCase().includes(q) || n.content.toLowerCase().includes(q));
+  }, [notes, searchQuery, section]);
+
+  const filteredReminders = useMemo(() => {
+    if (!searchQuery || section !== "reminders") return reminders;
+    const q = searchQuery.toLowerCase();
+    return reminders.filter((r) => r.message.toLowerCase().includes(q));
+  }, [reminders, searchQuery, section]);
+
+  const filteredInbox = useMemo(() => {
+    if (!searchQuery || section !== "inbox") return inboxItems;
+    const q = searchQuery.toLowerCase();
+    return inboxItems.filter((i) => (i.text || "").toLowerCase().includes(q) || i.item_type.toLowerCase().includes(q));
+  }, [inboxItems, searchQuery, section]);
+
+  /* ─── Render Helpers ─── */
+  function renderEmptyState(iconName, title, hint, actionLabel = "", onAction) {
+    return html`<div className="empty-state">
+      <div className="empty-state-icon"><${Icon} name=${iconName} size=${28} /></div>
+      <div className="empty-state-title">${title}</div>
+      <div className="empty-state-hint">${hint}</div>
+      ${actionLabel ? html`<button className="ghost sm" onClick=${onAction}>${actionLabel}</button>` : ""}
+    </div>`;
+  }
+
+  /* ─── RENDER ─── */
+  const meta = SECTION_META[section] || {};
 
   return html`
     <main className=${`app-shell density-${density}`}>
+
+      <!-- Toasts -->
       <div className="toast-container">
         ${toasts.map(t => html`<div key=${t.id} className=${`toast ${t.kind}`}>${t.message}</div>`)}
       </div>
-      <div className="dashboard-layout">
-        ${sidebarOpen && window.innerWidth <= 900 ? html`<button className="sidebar-backdrop" onClick=${() => setSidebarOpen(false)} aria-label="Close menu"></button>` : ""}
-        <aside id="main-sidebar" className=${`panel sidebar ${sidebarOpen ? "open" : ""}`} aria-hidden=${window.innerWidth <= 900 ? !sidebarOpen : false}>
-          <div className="workspace-badge">Operations Console</div>
-          <div className="brand">Personal Automation Hub</div>
-          <div className="muted">Unified command workspace</div>
-          <nav className="sidebar-nav">
-            ${navItems.map(
-              (id) =>
-                html`<button className=${`nav-link ${section === id ? "active" : ""}`} onClick=${() => openSection(id)}>${navLabel(id)}</button>`,
+
+      <!-- Keyboard Shortcuts Modal -->
+      ${showShortcuts && html`
+        <div className="shortcuts-overlay" onClick=${() => setShowShortcuts(false)}>
+          <div className="shortcuts-modal" onClick=${(e) => e.stopPropagation()}>
+            <h3>⌨ Keyboard Shortcuts</h3>
+            ${[
+              ["?", "Toggle this panel"],
+              ["/", "Focus search bar"],
+              ["R", "Refresh all data"],
+              ["1–7", "Switch sections"],
+              ["Esc", "Close menu / modal"],
+            ].map(([key, desc]) => html`
+              <div className="shortcut-row">
+                <span>${desc}</span>
+                <span className="shortcut-key">${key}</span>
+              </div>`
             )}
+          </div>
+        </div>
+      `}
+
+      <div className="dashboard-layout">
+        <!-- Sidebar Backdrop (mobile) -->
+        ${sidebarOpen && window.innerWidth <= 900 ? html`<button className="sidebar-backdrop" onClick=${() => setSidebarOpen(false)} aria-label="Close menu"></button>` : ""}
+
+        <!-- Sidebar -->
+        <aside id="main-sidebar" className=${`panel sidebar ${sidebarOpen ? "open" : ""}`}>
+          <div className="sidebar-brand">
+            <div className="brand-icon"><${Icon} name="zap" size=${22} /></div>
+            <div className="brand-text">
+              <div className="brand-name">AutoHub</div>
+              <div className="brand-subtitle">Command Center</div>
+            </div>
+          </div>
+
+          <div className="sidebar-divider"></div>
+
+          <div className="sidebar-label">Modules</div>
+          <nav className="sidebar-nav">
+            ${NAV_CONFIG.map((item, i) => html`
+              <button
+                key=${item.id}
+                id=${`nav-${item.id}`}
+                className=${`nav-link ${section === item.id ? "active" : ""}`}
+                onClick=${() => openSection(item.id)}
+              >
+                <${Icon} name=${item.icon} size=${18} />
+                ${item.label}
+                ${item.id === "inbox" && inboxItems.length > 0 ? html`<span className="nav-badge">${inboxItems.length}</span>` : ""}
+                ${item.id === "tasks" && tasks.filter(t => t.status !== "done").length > 0 ? html`<span className="nav-badge">${tasks.filter(t => t.status !== "done").length}</span>` : ""}
+                ${item.id === "reminders" && reminders.filter(r => r.status === "pending").length > 0 ? html`<span className="nav-badge">${reminders.filter(r => r.status === "pending").length}</span>` : ""}
+              </button>
+            `)}
           </nav>
+
+          <div className="sidebar-footer">
+            <button className="nav-link" onClick=${() => setShowShortcuts(true)}>
+              <${Icon} name="keyboard" size=${18} /> Shortcuts
+              <span className="nav-badge" style=${{ background: "rgba(255,255,255,0.06)", color: "var(--text-dim)" }}>?</span>
+            </button>
+          </div>
         </aside>
 
+        <!-- Main Content -->
         <section className="main-content">
+          <!-- Topbar -->
           <header className="panel topbar">
             <div className="topbar-left">
-              <button className="menu-toggle" onClick=${() => setSidebarOpen((v) => !v)} aria-controls="main-sidebar" aria-expanded=${sidebarOpen}>Menu</button>
-              <h1>Command Center</h1>
-              <div className="topbar-meta">
-                <span className="module-pill">${navLabel(section)}</span>
-                <span className="muted">${new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</span>
+              <div className="flex-row">
+                <button className="menu-toggle btn-icon ghost" onClick=${() => setSidebarOpen(v => !v)} aria-controls="main-sidebar" aria-expanded=${sidebarOpen}>
+                  <${Icon} name="menu" size=${20} />
+                </button>
+                <nav className="breadcrumb-nav" aria-label="Breadcrumb">
+                  <span className="bc-root">AutoHub</span>
+                  <span className="bc-sep">/</span>
+                  <span className="bc-current"><${Icon} name=${NAV_CONFIG.find(n => n.id === section)?.icon || "zap"} size=${13} />${meta.title}</span>
+                </nav>
+                <span className="topbar-date">${new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</span>
               </div>
-              <div className="muted">${sectionSubtitle(section)}</div>
             </div>
             <div className="topbar-right">
-              <button className="ghost density-toggle" onClick=${() => setDensity((v) => (v === "comfortable" ? "compact" : "comfortable"))}>
+              ${section !== "summary" && section !== "settings" ? html`
+                <div className="search-bar">
+                  <${Icon} name="search" size=${16} />
+                  <input
+                    ref=${searchRef}
+                    type="text"
+                    placeholder="Search ${meta.title.toLowerCase()}…"
+                    value=${searchQuery}
+                    onInput=${(e) => setSearchQuery(e.target.value)}
+                    style=${{ width: "200px", paddingLeft: "2.4rem" }}
+                  />
+                </div>
+              ` : ""}
+              <button className="ghost sm" onClick=${() => setDensity(v => v === "comfortable" ? "compact" : "comfortable")}>
                 ${density === "comfortable" ? "Compact" : "Comfortable"}
               </button>
-              <button className="ghost refresh-btn" onClick=${refreshAll} disabled=${busy}>Refresh</button>
-              <div className=${`status-pill ${statusKind}`}>${busy ? "Syncing..." : status || "Ready"}</div>
+              <button className="ghost sm" onClick=${refreshAll} disabled=${busy}>
+                <${Icon} name="refresh-cw" size=${14} /> Refresh
+              </button>
+              <div className=${`status-pill ${statusKind}`}>${busy ? "Syncing…" : status || "Ready"}</div>
             </div>
           </header>
 
-          ${section === "summary" &&
-          html`<section className="panel section-panel">
-            <div className="section-head">
-              <h2>Today Summary</h2>
-              <p className="muted">Snapshot of current operations and delivery health.</p>
-            </div>
-            <div className="summary-grid">
-              <article className="summary-item"><span>Captures</span><strong>${summary?.captures_today ?? 0}</strong></article>
-              <article className="summary-item"><span>Open Tasks</span><strong>${summary?.tasks_open ?? 0}</strong></article>
-              <article className="summary-item"><span>Pending Reminders</span><strong>${summary?.reminders_pending ?? 0}</strong></article>
-              <article className="summary-item"><span>Sent Today</span><strong>${summary?.reminders_sent_today ?? 0}</strong></article>
-            </div>
-          </section>`}
+          <!-- ═══ SUMMARY SECTION ═══ -->
+          ${section === "summary" && html`
+            <section className="panel section-panel" id="section-summary">
+              <div className="section-head">
+                <h2><${Icon} name="bar-chart" /> Today's Summary</h2>
+                <p className="muted">Real-time snapshot of your operational health.</p>
+              </div>
+              <div className="summary-grid">
+                <article className="summary-card card-accent">
+                  <div className="summary-card-icon"><${Icon} name="pen-line" size=${20} /></div>
+                  <div className="summary-card-label">Captures Today</div>
+                  <div className="summary-card-value">${summary?.captures_today ?? 0}</div>
+                </article>
+                <article className="summary-card card-warning">
+                  <div className="summary-card-icon"><${Icon} name="check-square" size=${20} /></div>
+                  <div className="summary-card-label">Open Tasks</div>
+                  <div className="summary-card-value">${summary?.tasks_open ?? 0}</div>
+                </article>
+                <article className="summary-card card-purple">
+                  <div className="summary-card-icon"><${Icon} name="bell" size=${20} /></div>
+                  <div className="summary-card-label">Pending Reminders</div>
+                  <div className="summary-card-value">${summary?.reminders_pending ?? 0}</div>
+                </article>
+                <article className="summary-card card-success">
+                  <div className="summary-card-icon"><${Icon} name="send" size=${20} /></div>
+                  <div className="summary-card-label">Sent Today</div>
+                  <div className="summary-card-value">${summary?.reminders_sent_today ?? 0}</div>
+                </article>
+              </div>
+            </section>
 
-          ${section === "captures" &&
-          html`<section className="panel section-panel">
-            <div className="section-head">
-              <h2>Quick Capture</h2>
-              <p className="muted">Save context immediately before it gets lost.</p>
-            </div>
-            <form onSubmit=${submitCapture} className="stack">
-              <textarea required value=${captureForm.content} onInput=${(e) => setCaptureForm({ ...captureForm, content: e.target.value })} placeholder="Idea, thought, link context" />
-              <input type="url" value=${captureForm.url} onInput=${(e) => setCaptureForm({ ...captureForm, url: e.target.value })} placeholder="Optional URL" />
-              <button disabled=${busy}>Save Capture</button>
-            </form>
-            <ul className="list">
-              ${captures.map((i) => html`<li><div>${i.content}</div><div className="muted">${i.url || ""} ${formatDate(i.created_at)}</div></li>`)}
-              ${captures.length === 0 && renderEmptyState("No captures yet", "Use the form above to save your first idea.", "Focus Capture Form")}
-            </ul>
-          </section>`}
+            <!-- Quick Capture on Summary -->
+            <section className="panel section-panel">
+              <div className="section-head">
+                <h2><${Icon} name="zap" /> Quick Capture</h2>
+                <p className="muted">Don't lose your thought — capture it now.</p>
+              </div>
+              <form onSubmit=${submitCapture} className="quick-capture-bar">
+                <${Icon} name="pen-line" size=${18} />
+                <input required value=${captureForm.content} onInput=${(e) => setCaptureForm({ ...captureForm, content: e.target.value })} placeholder="What's on your mind?" />
+                <button type="submit" className="sm" disabled=${busy}><${Icon} name="plus" size=${14} /> Capture</button>
+              </form>
+            </section>
 
-          ${section === "inbox" &&
-          html`<section className="panel section-panel">
-            <div className="section-head">
-              <h2>Telegram Inbox</h2>
-              <p className="muted">Anything you share to your Telegram bot lands here automatically.</p>
-            </div>
-            <ul className="inbox-grid">
-              ${busy && inboxItems.length === 0 ? 
-                [1,2,3].map(() => html`<li>
-                  <div className="skeleton" style=${{width: '40%'}}></div>
-                  <div className="skeleton thumb"></div>
-                  <div className="skeleton"></div>
-                  <div className="skeleton" style=${{width: '70%'}}></div>
-                </li>`) 
-                :
-                inboxItems.map((item) => html`<li>
-                  <div className="inbox-headline">
-                    <strong>${item.item_type.toUpperCase()}</strong>
-                    <div className="inbox-meta">
-                      <span className="muted">#${item.id}</span>
-                      <button className="ghost chip-btn" onClick=${() => analyzeInbox(item.id)}>Auto-Tag</button>
+            <!-- Recent Activity -->
+            ${captures.length > 0 && html`
+              <section className="panel section-panel">
+                <div className="section-head">
+                  <h2><${Icon} name="clock" /> Recent Captures</h2>
+                  <p className="muted">Latest items from your capture stream.</p>
+                </div>
+                <div className="list">
+                  ${captures.slice(0, 5).map(c => html`
+                    <div className="list-item" key=${c.id}>
+                      <div className="list-item-content">
+                        <div className="list-item-title">${c.content}</div>
+                        <div className="list-item-meta">
+                          ${c.url ? html`<span><${Icon} name="link" size=${12} /> ${c.url.length > 40 ? c.url.substring(0, 40) + "…" : c.url}</span>` : ""}
+                          <span>${relativeTime(c.created_at)}</span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  ${itemCanPreview(item)
-                    ? html`<img className="inbox-thumb" src=${`/api/inbox/${item.id}/media`} alt="Inbox media" loading="lazy" />`
-                    : ""}
-                  <div className="inbox-body">${item.text || "(no text)"}</div>
-                  <div className="muted">${formatDate(item.created_at)} | msg #${item.message_id}</div>
-                  <div className="row inbox-actions">
-                    <button className="ghost" onClick=${() => inboxToCapture(item.id)}>To Capture</button>
-                    <button className="ghost" onClick=${() => inboxToTask(item.id)}>To Task</button>
-                    <button className="ghost" onClick=${() => archiveInbox(item.id)}>Archive</button>
-                  </div>
-                </li>`)
-              }
-              ${!busy && inboxItems.length === 0 && renderEmptyState("Inbox is empty", "Send text, photos, or files to your bot.", "Refresh", refreshAll)}
-            </ul>
-          </section>`}
+                  `)}
+                </div>
+              </section>
+            `}
+          `}
 
-          ${section === "tasks" &&
-          html`<section className="panel section-panel">
-            <div className="section-head">
-              <h2>Tasks</h2>
-              <p className="muted">Prioritize work and update completion status.</p>
-            </div>
-            <form onSubmit=${submitTask} className="stack">
-              <input required value=${taskForm.title} onInput=${(e) => setTaskForm({ ...taskForm, title: e.target.value })} placeholder="Task title" />
-              <div className="row">
-                <select value=${taskForm.priority} onChange=${(e) => setTaskForm({ ...taskForm, priority: e.target.value })}>
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
-                <input type="date" value=${taskForm.dueDate} onInput=${(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} />
+          <!-- ═══ CAPTURES SECTION ═══ -->
+          ${section === "captures" && html`
+            <section className="panel section-panel" id="section-captures">
+              <div className="section-head">
+                <h2><${Icon} name="pen-line" /> Quick Capture</h2>
+                <p className="muted">Save context immediately before it gets lost.</p>
               </div>
-              <button disabled=${busy}>Add Task</button>
-            </form>
-            <div className="filter-row">
-              ${["all", "todo", "done"].map(
-                (f) => html`<button className=${`ghost ${taskFilter === f ? "active" : ""}`} onClick=${() => setTaskFilter(f)}>${f}</button>`,
-              )}
-            </div>
-            <ul className="list">
-              ${filteredTasks.map(
-                (t) => html`<li>
-                  <div className=${t.status === "done" ? "done" : ""}>${t.title}</div>
-                  <div className="muted">${t.status} | ${t.priority} | ${formatDate(t.due_date)}</div>
-                  <button className="ghost" onClick=${() => toggleTask(t)}>${t.status === "done" ? "Mark Todo" : "Mark Done"}</button>
-                </li>`,
-              )}
-              ${filteredTasks.length === 0 && renderEmptyState("No tasks in this filter", "Add a task above and track progress.", "Focus Task Form")}
-            </ul>
-          </section>`}
-
-          ${section === "notes" &&
-          html`<section className="panel section-panel">
-            <div className="section-head">
-              <h2>Encrypted Notes</h2>
-              <p className="muted">Keep sensitive notes protected and searchable.</p>
-            </div>
-            <form onSubmit=${submitNote} className="stack">
-              <input value=${noteForm.title} onInput=${(e) => setNoteForm({ ...noteForm, title: e.target.value })} placeholder="Title" />
-              <textarea required value=${noteForm.content} onInput=${(e) => setNoteForm({ ...noteForm, content: e.target.value })} placeholder="Private note" />
-              <button disabled=${busy}>Save Note</button>
-            </form>
-            <ul className="list">
-              ${notes.map(
-                (n) => html`<li>
-                  <div><strong>${n.title || "Untitled"}</strong></div>
-                  <div>${n.content}</div>
-                  <div className="muted">Updated ${formatDate(n.updated_at)}</div>
-                  <button className="ghost" onClick=${() => deleteNote(n.id)}>Delete</button>
-                </li>`,
-              )}
-              ${notes.length === 0 && renderEmptyState("No notes yet", "Create your first encrypted note above.", "Focus Note Form")}
-            </ul>
-          </section>`}
-
-          ${section === "reminders" &&
-          html`<section className="panel section-panel">
-            <div className="section-head">
-              <h2>Reminders</h2>
-              <p className="muted">Schedule message delivery with optional recurrence.</p>
-            </div>
-            <form onSubmit=${submitReminder} className="stack">
-              <input required value=${reminderForm.message} onInput=${(e) => setReminderForm({ ...reminderForm, message: e.target.value })} placeholder="Reminder message" />
-              <input required value=${reminderForm.target} onInput=${(e) => setReminderForm({ ...reminderForm, target: e.target.value })} placeholder="Telegram chat id" />
-              <input type="datetime-local" required value=${reminderForm.remindAt} onInput=${(e) => setReminderForm({ ...reminderForm, remindAt: e.target.value })} />
-              <div className="quick-row">
-                <button className="ghost" onClick=${(e) => { e.preventDefault(); setReminderForm({ ...reminderForm, remindAt: toIsoLocalDateTime(15) }); }}>+15m</button>
-                <button className="ghost" onClick=${(e) => { e.preventDefault(); setReminderForm({ ...reminderForm, remindAt: toIsoLocalDateTime(30) }); }}>+30m</button>
-                <button className="ghost" onClick=${(e) => { e.preventDefault(); setReminderForm({ ...reminderForm, remindAt: toIsoLocalDateTime(60) }); }}>+1h</button>
+              <form onSubmit=${submitCapture} className="stack">
+                <textarea required value=${captureForm.content} onInput=${(e) => setCaptureForm({ ...captureForm, content: e.target.value })} placeholder="Idea, thought, insight, or context…" rows="3" />
+                <input type="url" value=${captureForm.url} onInput=${(e) => setCaptureForm({ ...captureForm, url: e.target.value })} placeholder="Optional URL reference" />
+                <button disabled=${busy}><${Icon} name="plus" size=${16} /> Save Capture</button>
+              </form>
+              <div style=${{ marginTop: "1.25rem" }}>
+                ${filteredCaptures.length > 0 ? html`
+                  <div className="list">
+                    ${filteredCaptures.map(c => html`
+                      <div className="list-item" key=${c.id}>
+                        <div className="list-item-content">
+                          <div className="list-item-title">${c.content}</div>
+                          <div className="list-item-meta">
+                            ${c.url ? html`<span><${Icon} name="link" size=${12} /> <a href=${c.url} target="_blank" rel="noopener">${c.url.length > 50 ? c.url.substring(0, 50) + "…" : c.url}</a></span>` : ""}
+                            <span><${Icon} name="clock" size=${12} /> ${formatDate(c.created_at)}</span>
+                          </div>
+                        </div>
+                        <div className="list-item-actions">
+                          <button className="btn-icon danger-ghost sm" onClick=${() => deleteCapture(c.id)} title="Delete">
+                            <${Icon} name="trash" size=${14} />
+                          </button>
+                        </div>
+                      </div>
+                    `)}
+                  </div>
+                ` : renderEmptyState("pen-line", "No captures yet", "Use the form above to save your first idea.", "Focus Form", () => document.querySelector(".section-panel textarea")?.focus())}
               </div>
-              <label className="inline-check">
-                <input type="checkbox" checked=${reminderForm.recurring} onChange=${(e) => setReminderForm({ ...reminderForm, recurring: e.target.checked })} />
-                Repeat reminder
-              </label>
-              ${reminderForm.recurring && html`<input type="number" min="1" placeholder="Recurrence minutes" value=${reminderForm.recurrenceMinutes} onInput=${(e) => setReminderForm({ ...reminderForm, recurrenceMinutes: e.target.value })} />`}
-              <button disabled=${busy}>Schedule Reminder</button>
-            </form>
-            <ul className="list">
-              ${reminders.map(
-                (r) => html`<li>
-                  <div>${r.message}</div>
-                  <div className="muted">${r.channel} -> ${r.target}</div>
-                  <div className="muted">${formatDate(r.remind_at)} | ${r.status}</div>
-                  <button onClick=${() => sendNow(r.id)}>Send Now</button>
-                </li>`,
-              )}
-              ${reminders.length === 0 && renderEmptyState("No reminders yet", "Schedule a reminder using the form above.", "Focus Reminder Form")}
-            </ul>
-          </section>`}
+            </section>
+          `}
 
-          ${section === "settings" &&
-          html`<section className="panel section-panel">
-            <div className="section-head">
-              <h2>Settings</h2>
-              <p className="muted">Telegram session auth is enabled. API key is optional for external API clients.</p>
-            </div>
-            <div className="stack">
-              <input type="password" placeholder="Optional X-API-Key" value=${apiKey} onInput=${(e) => setApiKey(e.target.value)} />
-              <button
-                className="ghost"
-                onClick=${() => {
-                  localStorage.setItem(keyStorage, apiKey.trim());
-                  setAppStatus(apiKey.trim() ? "API key saved." : "API key cleared.", "success");
-                }}
-              >
-                Save API Key
-              </button>
-              <button className="ghost" onClick=${logout}>Logout</button>
-            </div>
-          </section>`}
+          <!-- ═══ INBOX SECTION ═══ -->
+          ${section === "inbox" && html`
+            <section className="panel section-panel" id="section-inbox">
+              <div className="section-head">
+                <h2><${Icon} name="inbox" /> Telegram Inbox</h2>
+                <p className="muted">Anything shared to your Telegram bot lands here automatically.</p>
+              </div>
+              ${busy && filteredInbox.length === 0 ? html`
+                <div className="inbox-grid">
+                  ${[1,2,3].map(n => html`<div className="inbox-card" key=${n}>
+                    <div style=${{ padding: "1rem" }}>
+                      <div className="skeleton title"></div>
+                      <div className="skeleton thumb"></div>
+                      <div className="skeleton line"></div>
+                      <div className="skeleton line" style=${{ width: "60%" }}></div>
+                    </div>
+                  </div>`)}
+                </div>
+              ` : filteredInbox.length > 0 ? html`
+                <div className="inbox-grid">
+                  ${filteredInbox.map(item => html`
+                    <div className="inbox-card" key=${item.id}>
+                      <div className="inbox-card-header">
+                        <span className="inbox-type-badge">${item.item_type}</span>
+                        <div className="flex-row">
+                          <span className="muted" style=${{ fontSize: "0.75rem" }}>#${item.id}</span>
+                          <button className="ghost sm" onClick=${() => analyzeInbox(item.id)}>
+                            <${Icon} name="tag" size=${12} /> Auto-Tag
+                          </button>
+                        </div>
+                      </div>
+                      <div className="inbox-card-body">
+                        ${itemCanPreview(item) ? html`<img className="inbox-thumb" src=${`/api/inbox/${item.id}/media`} alt="Inbox media" loading="lazy" />` : ""}
+                        <div className="inbox-text">${item.text || "(no text content)"}</div>
+                        <div className="list-item-meta">
+                          <span><${Icon} name="clock" size=${12} /> ${formatDate(item.created_at)}</span>
+                          <span>msg #${item.message_id}</span>
+                        </div>
+                      </div>
+                      <div className="inbox-card-actions">
+                        <button className="ghost sm" onClick=${() => inboxToCapture(item.id)}>
+                          <${Icon} name="pen-line" size=${12} /> Capture
+                        </button>
+                        <button className="ghost sm" onClick=${() => inboxToTask(item.id)}>
+                          <${Icon} name="check-square" size=${12} /> Task
+                        </button>
+                        <button className="ghost sm" onClick=${() => archiveInbox(item.id)}>
+                          <${Icon} name="archive" size=${12} /> Archive
+                        </button>
+                      </div>
+                    </div>
+                  `)}
+                </div>
+              ` : renderEmptyState("inbox", "Inbox is empty", "Send text, photos, or files to your Telegram bot to see them here.", "Refresh", refreshAll)}
+            </section>
+          `}
+
+          <!-- ═══ TASKS SECTION ═══ -->
+          ${section === "tasks" && html`
+            <section className="panel section-panel" id="section-tasks">
+              <div className="section-head">
+                <h2><${Icon} name="check-square" /> Tasks</h2>
+                <p className="muted">Prioritize work and track execution progress.</p>
+              </div>
+              <form onSubmit=${submitTask} className="stack">
+                <input required value=${taskForm.title} onInput=${(e) => setTaskForm({ ...taskForm, title: e.target.value })} placeholder="What needs to be done?" />
+                <div className="row row-2">
+                  <select value=${taskForm.priority} onChange=${(e) => setTaskForm({ ...taskForm, priority: e.target.value })}>
+                    <option value="low">Low Priority</option>
+                    <option value="medium">Medium Priority</option>
+                    <option value="high">High Priority</option>
+                  </select>
+                  <input type="date" value=${taskForm.dueDate} onInput=${(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} />
+                </div>
+                <button disabled=${busy}><${Icon} name="plus" size=${16} /> Add Task</button>
+              </form>
+
+              <div className="filter-row" style=${{ marginTop: "1rem" }}>
+                ${["all", "todo", "done"].map(f => html`
+                  <button key=${f} className=${`ghost sm ${taskFilter === f ? "active" : ""}`} onClick=${() => setTaskFilter(f)}>
+                    ${f === "all" ? "All" : f === "todo" ? "To Do" : "Done"} ${f !== "all" ? `(${tasks.filter(t => t.status === f).length})` : `(${tasks.length})`}
+                  </button>
+                `)}
+              </div>
+
+              <div style=${{ marginTop: "0.5rem" }}>
+                ${filteredTasks.length > 0 ? html`
+                  <div className="list">
+                    ${filteredTasks.map(t => html`
+                      <div className="list-item" key=${t.id}>
+                        <button
+                          className=${`btn-icon ${t.status === "done" ? "success-ghost" : "ghost"}`}
+                          onClick=${() => toggleTask(t)}
+                          title=${t.status === "done" ? "Mark as Todo" : "Mark as Done"}
+                          style=${{ flexShrink: 0 }}
+                        >
+                          <${Icon} name=${t.status === "done" ? "check" : "check-square"} size=${16} />
+                        </button>
+                        <div className="list-item-content">
+                          <div className=${`list-item-title ${t.status === "done" ? "done" : ""}`}>${t.title}</div>
+                          <div className="list-item-meta">
+                            <span className=${`priority-badge ${t.priority}`}>${t.priority}</span>
+                            <span className=${`status-badge ${t.status}`}>${t.status}</span>
+                            ${t.due_date ? html`<span><${Icon} name="clock" size=${12} /> ${formatDateShort(t.due_date)}</span>` : ""}
+                          </div>
+                        </div>
+                        <div className="list-item-actions">
+                          <button className="btn-icon danger-ghost sm" onClick=${() => deleteTask(t.id)} title="Delete">
+                            <${Icon} name="trash" size=${14} />
+                          </button>
+                        </div>
+                      </div>
+                    `)}
+                  </div>
+                ` : renderEmptyState("check-square", "No tasks in this filter", "Add a task to get started tracking your work.", "Focus Form", () => document.querySelector(".section-panel input")?.focus())}
+              </div>
+            </section>
+          `}
+
+          <!-- ═══ NOTES SECTION ═══ -->
+          ${section === "notes" && html`
+            <section className="panel section-panel" id="section-notes">
+              <div className="section-head">
+                <h2><${Icon} name="file-lock" /> Encrypted Notes</h2>
+                <p className="muted">Your notes are encrypted at rest for maximum privacy.</p>
+              </div>
+              <form onSubmit=${submitNote} className="stack">
+                <input value=${noteForm.title} onInput=${(e) => setNoteForm({ ...noteForm, title: e.target.value })} placeholder="Note title (optional)" />
+                <textarea required value=${noteForm.content} onInput=${(e) => setNoteForm({ ...noteForm, content: e.target.value })} placeholder="Write your private note here…" rows="4" />
+                <button disabled=${busy}><${Icon} name="save" size=${16} /> Save Encrypted Note</button>
+              </form>
+              <div style=${{ marginTop: "1.25rem" }}>
+                ${filteredNotes.length > 0 ? html`
+                  <div className="list">
+                    ${filteredNotes.map(n => html`
+                      <div className="list-item" key=${n.id}>
+                        <div className="list-item-content">
+                          <div className="list-item-title">${n.title || "Untitled Note"}</div>
+                          <div style=${{ color: "var(--text-secondary)", fontSize: "0.88rem", whiteSpace: "pre-wrap", marginTop: "0.3rem", lineHeight: 1.6 }}>${n.content}</div>
+                          <div className="list-item-meta" style=${{ marginTop: "0.5rem" }}>
+                            <span><${Icon} name="clock" size=${12} /> Updated ${formatDate(n.updated_at)}</span>
+                          </div>
+                        </div>
+                        <div className="list-item-actions">
+                          <button className="btn-icon danger-ghost sm" onClick=${() => deleteNote(n.id)} title="Delete">
+                            <${Icon} name="trash" size=${14} />
+                          </button>
+                        </div>
+                      </div>
+                    `)}
+                  </div>
+                ` : renderEmptyState("file-lock", "No notes yet", "Create your first encrypted note above.", "Focus Form", () => document.querySelector(".section-panel input")?.focus())}
+              </div>
+            </section>
+          `}
+
+          <!-- ═══ REMINDERS SECTION ═══ -->
+          ${section === "reminders" && html`
+            <section className="panel section-panel" id="section-reminders">
+              <div className="section-head">
+                <h2><${Icon} name="bell" /> Reminders</h2>
+                <p className="muted">Schedule Telegram message delivery with optional recurrence.</p>
+              </div>
+              <form onSubmit=${submitReminder} className="stack">
+                <input required value=${reminderForm.message} onInput=${(e) => setReminderForm({ ...reminderForm, message: e.target.value })} placeholder="Reminder message" />
+                <input required value=${reminderForm.target} onInput=${(e) => setReminderForm({ ...reminderForm, target: e.target.value })} placeholder="Telegram chat ID" />
+                <input type="datetime-local" required value=${reminderForm.remindAt} onInput=${(e) => setReminderForm({ ...reminderForm, remindAt: e.target.value })} />
+                <div className="flex-row">
+                  ${[
+                    { label: "+15m", mins: 15 },
+                    { label: "+30m", mins: 30 },
+                    { label: "+1h", mins: 60 },
+                    { label: "+3h", mins: 180 },
+                    { label: "Tomorrow 9am", mins: null },
+                  ].map(p => html`
+                    <button key=${p.label} className="ghost sm" onClick=${(e) => {
+                      e.preventDefault();
+                      if (p.mins !== null) {
+                        setReminderForm({ ...reminderForm, remindAt: toIsoLocalDateTime(p.mins) });
+                      } else {
+                        const tomorrow = new Date();
+                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        tomorrow.setHours(9, 0, 0, 0);
+                        const yyyy = tomorrow.getFullYear();
+                        const mm = String(tomorrow.getMonth() + 1).padStart(2, "0");
+                        const dd = String(tomorrow.getDate()).padStart(2, "0");
+                        setReminderForm({ ...reminderForm, remindAt: `${yyyy}-${mm}-${dd}T09:00` });
+                      }
+                    }}>
+                      <${Icon} name="clock" size=${12} /> ${p.label}
+                    </button>
+                  `)}
+                </div>
+                <label className="inline-check">
+                  <input type="checkbox" checked=${reminderForm.recurring} onChange=${(e) => setReminderForm({ ...reminderForm, recurring: e.target.checked })} />
+                  <${Icon} name="repeat" size=${14} /> Repeat this reminder
+                </label>
+                ${reminderForm.recurring && html`<input type="number" min="1" placeholder="Recurrence interval (minutes)" value=${reminderForm.recurrenceMinutes} onInput=${(e) => setReminderForm({ ...reminderForm, recurrenceMinutes: e.target.value })} />`}
+                <button disabled=${busy}><${Icon} name="bell" size=${16} /> Schedule Reminder</button>
+              </form>
+
+              <div style=${{ marginTop: "1.25rem" }}>
+                ${filteredReminders.length > 0 ? html`
+                  <div className="list">
+                    ${filteredReminders.map(r => html`
+                      <div className="list-item" key=${r.id}>
+                        <div className="list-item-content">
+                          <div className="list-item-title">${r.message}</div>
+                          <div className="list-item-meta">
+                            <span className=${`status-badge ${r.status}`}>${r.status}</span>
+                            <span><${Icon} name="send" size=${12} /> ${r.channel} → ${r.target}</span>
+                            <span><${Icon} name="clock" size=${12} /> ${formatDate(r.remind_at)}</span>
+                            ${r.is_recurring ? html`<span><${Icon} name="repeat" size=${12} /> every ${r.recurrence_minutes}m</span>` : ""}
+                          </div>
+                        </div>
+                        <div className="list-item-actions">
+                          ${r.status === "pending" ? html`
+                            <button className="success-ghost sm" onClick=${() => sendNow(r.id)} title="Send Now">
+                              <${Icon} name="send" size=${14} /> Send
+                            </button>
+                          ` : ""}
+                          <button className="btn-icon danger-ghost sm" onClick=${() => deleteReminder(r.id)} title="Delete">
+                            <${Icon} name="trash" size=${14} />
+                          </button>
+                        </div>
+                      </div>
+                    `)}
+                  </div>
+                ` : renderEmptyState("bell", "No reminders yet", "Schedule your first reminder using the form above.", "Focus Form", () => document.querySelector(".section-panel input")?.focus())}
+              </div>
+            </section>
+          `}
+
+          <!-- ═══ SETTINGS SECTION ═══ -->
+          ${section === "settings" && html`
+            <section className="panel section-panel" id="section-settings">
+              <div className="section-head">
+                <h2><${Icon} name="settings" /> Settings</h2>
+                <p className="muted">Configure access credentials and workspace preferences.</p>
+              </div>
+              <div className="stack" style=${{ maxWidth: "480px" }}>
+                <div>
+                  <div className="field-label">API Key (optional)</div>
+                  <p className="muted" style=${{ marginBottom: "0.5rem", fontSize: "0.82rem" }}>For external API clients. Telegram session auth is the primary login method.</p>
+                  <input type="password" placeholder="Paste your X-API-Key" value=${apiKey} onInput=${(e) => setApiKey(e.target.value)} />
+                </div>
+                <button
+                  className="ghost"
+                  onClick=${() => {
+                    localStorage.setItem(keyStorage, apiKey.trim());
+                    setAppStatus(apiKey.trim() ? "API key saved." : "API key cleared.", "success");
+                  }}
+                >
+                  <${Icon} name="key" size=${16} /> ${apiKey.trim() ? "Save API Key" : "Clear API Key"}
+                </button>
+
+                <div className="sidebar-divider" style=${{ margin: "0.5rem 0" }}></div>
+
+                <div>
+                  <div className="field-label">Density</div>
+                  <div className="flex-row">
+                    <button className=${`ghost sm ${density === "comfortable" ? "active" : ""}`} onClick=${() => setDensity("comfortable")}>Comfortable</button>
+                    <button className=${`ghost sm ${density === "compact" ? "active" : ""}`} onClick=${() => setDensity("compact")}>Compact</button>
+                  </div>
+                </div>
+
+                <div className="sidebar-divider" style=${{ margin: "0.5rem 0" }}></div>
+
+                <button className="danger-ghost" onClick=${logout}>
+                  <${Icon} name="log-out" size=${16} /> Logout
+                </button>
+              </div>
+            </section>
+          `}
+
         </section>
       </div>
     </main>
