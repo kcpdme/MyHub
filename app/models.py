@@ -95,3 +95,21 @@ class AllowedTelegramUser(Base):
     display_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class TelegramInboxItem(Base):
+    __tablename__ = "telegram_inbox_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    source: Mapped[str] = mapped_column(String(32), default="telegram", nullable=False)
+    telegram_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    chat_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    message_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    item_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    file_id: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    file_unique_id: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    media_group_id: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    raw_json: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)

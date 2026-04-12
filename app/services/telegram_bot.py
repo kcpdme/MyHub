@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+import json
 from datetime import datetime, timedelta
 
 import httpx
@@ -11,6 +12,7 @@ from app import models
 from app.config import settings
 from app.database import SessionLocal
 from app.services.crypto_service import decrypt_text, encrypt_text
+from app.services.summary_service import get_today_summary
 
 
 class TelegramBotWorker:
@@ -70,13 +72,29 @@ class TelegramBotWorker:
                         chat_id = str(chat.get("id", "")).strip()
                         telegram_user_id = str(from_user.get("id", "")).strip()
 
-                        if text and chat_id and telegram_user_id:
-                            self._handle_message(client, base_url, chat_id, telegram_user_id, text)
+                        if chat_id and telegram_user_id:
+                            self._handle_message(client, base_url, chat_id, telegram_user_id, text, message)
                 except Exception:
                     time.sleep(2)
 
     def _send_text(self, client: httpx.Client, base_url: str, chat_id: str, text: str) -> None:
         client.post(f"{base_url}/sendMessage", json={"chat_id": chat_id, "text": text})
+
+    def _send_menu(self, client: httpx.Client, base_url: str, chat_id: str, text: str = "Choose an action:") -> None:
+        keyboard = {
+            "keyboard": [
+                [{"text": "/summary"}, {"text": "/task list"}],
+                [{"text": "/note list"}, {"text": "/inbox list"}],
+                [{"text": "/reminder list"}],
+                [{"text": "/help"}],
+            ],
+            "resize_keyboard": True,
+            "one_time_keyboard": False,
+        }
+        client.post(
+            f"{base_url}/sendMessage",
+            json={"chat_id": chat_id, "text": text, "reply_markup": keyboard},
+        )
 
     def _is_allowed_user(self, db: Session, telegram_user_id: str) -> bool:
         return (
@@ -87,6 +105,64 @@ class TelegramBotWorker:
             is not None
         )
 
+    def _extract_inbox_item(self, message: dict) -> tuple[str, str, str, str, str]:
+        text = (message.get("text") or "").strip()
+        caption = (message.get("caption") or "").strip()
+
+        if text:
+            return "text", text, "", "", str(message.get("media_group_id", "") or "")
+
+        photo = message.get("photo") or []
+        if photo:
+            best = photo[-1]
+            content = caption or "[photo]"
+            return (
+                "photo",
+                content,
+                str(best.get("file_id", "") or ""),
+                str(best.get("file_unique_id", "") or ""),
+                str(message.get("media_group_id", "") or ""),
+            )
+
+        for media_type in ["document", "video", "audio", "voice", "animation", "sticker"]:
+            media_obj = message.get(media_type)
+            if media_obj:
+                content = caption or f"[{media_type}]"
+                return (
+                    media_type,
+                    content,
+                    str(media_obj.get("file_id", "") or ""),
+                    str(media_obj.get("file_unique_id", "") or ""),
+                    str(message.get("media_group_id", "") or ""),
+                )
+
+        if message.get("location"):
+            location = message.get("location") or {}
+            content = f"[location] {location.get('latitude')}, {location.get('longitude')}"
+            return "location", content, "", "", ""
+
+        return "unknown", "[unsupported message type]", "", "", ""
+
+    def _store_inbox_item(self, db: Session, telegram_user_id: str, chat_id: str, message: dict) -> models.TelegramInboxItem:
+        item_type, content, file_id, file_unique_id, media_group_id = self._extract_inbox_item(message)
+        item = models.TelegramInboxItem(
+            source="telegram",
+            telegram_user_id=telegram_user_id,
+            chat_id=chat_id,
+            message_id=int(message.get("message_id", 0) or 0),
+            item_type=item_type,
+            text=content,
+            file_id=file_id,
+            file_unique_id=file_unique_id,
+            media_group_id=media_group_id,
+            raw_json=json.dumps(message, ensure_ascii=True),
+            is_archived=False,
+        )
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+        return item
+
     def _handle_message(
         self,
         client: httpx.Client,
@@ -94,6 +170,7 @@ class TelegramBotWorker:
         chat_id: str,
         telegram_user_id: str,
         text: str,
+        message: dict,
     ) -> None:
         db: Session = SessionLocal()
         try:
@@ -103,18 +180,23 @@ class TelegramBotWorker:
                 self._send_text(client, base_url, chat_id, f"telegram_user_id: {telegram_user_id}")
                 return
 
-            if lowered in {"/start", "/help"}:
-                self._send_text(
+            if lowered in {"/start", "/help", "/menu"}:
+                self._send_menu(
                     client,
                     base_url,
                     chat_id,
                     "Commands:\n"
                     "/id\n"
+                    "/menu\n"
+                    "/summary\n"
                     "/note add <content>\n"
                     "/note list\n"
                     "/task add <title>\n"
+                    "/task done <id>\n"
                     "/task list\n"
                     "/capture <text>\n"
+                    "/inbox list\n"
+                    "/reminder list\n"
                     "/remind <minutes> <message>",
                 )
                 return
@@ -125,6 +207,17 @@ class TelegramBotWorker:
                     base_url,
                     chat_id,
                     f"Access denied. Ask admin to allow telegram_user_id: {telegram_user_id}",
+                )
+                return
+
+            is_command = bool(text.strip().startswith("/"))
+            if not is_command:
+                inbox_item = self._store_inbox_item(db, telegram_user_id, chat_id, message)
+                self._send_text(
+                    client,
+                    base_url,
+                    chat_id,
+                    f"Saved to inbox #{inbox_item.id} ({inbox_item.item_type}).",
                 )
                 return
 
@@ -187,6 +280,28 @@ class TelegramBotWorker:
                 self._send_text(client, base_url, chat_id, "\n".join(lines))
                 return
 
+            if lowered.startswith("/task done"):
+                parts = text.split(" ", 2)
+                if len(parts) < 3:
+                    self._send_text(client, base_url, chat_id, "Usage: /task done <id>")
+                    return
+                try:
+                    task_id = int(parts[2].strip())
+                except Exception:
+                    self._send_text(client, base_url, chat_id, "Task id must be a number.")
+                    return
+
+                task = db.query(models.Task).filter(models.Task.id == task_id).first()
+                if not task:
+                    self._send_text(client, base_url, chat_id, f"Task #{task_id} not found.")
+                    return
+
+                task.status = "done"
+                db.add(task)
+                db.commit()
+                self._send_text(client, base_url, chat_id, f"Task #{task.id} marked done.")
+                return
+
             if lowered.startswith("/capture "):
                 content = text[9:].strip()
                 if not content:
@@ -195,6 +310,26 @@ class TelegramBotWorker:
                 db.add(models.Capture(content=content, url=""))
                 db.commit()
                 self._send_text(client, base_url, chat_id, "Capture saved.")
+                return
+
+            if lowered.startswith("/inbox list"):
+                items = (
+                    db.query(models.TelegramInboxItem)
+                    .filter(models.TelegramInboxItem.telegram_user_id == telegram_user_id)
+                    .filter(models.TelegramInboxItem.is_archived.is_(False))
+                    .order_by(models.TelegramInboxItem.created_at.desc())
+                    .limit(8)
+                    .all()
+                )
+                if not items:
+                    self._send_text(client, base_url, chat_id, "Inbox is empty.")
+                    return
+
+                lines = ["Latest inbox items:"]
+                for i in items:
+                    snippet = (i.text or "").replace("\n", " ")[:45]
+                    lines.append(f"#{i.id} [{i.item_type}] {snippet}")
+                self._send_text(client, base_url, chat_id, "\n".join(lines))
                 return
 
             if lowered.startswith("/remind "):
@@ -228,6 +363,37 @@ class TelegramBotWorker:
                 db.add(reminder)
                 db.commit()
                 self._send_text(client, base_url, chat_id, f"Reminder scheduled in {minutes} minute(s).")
+                return
+
+            if lowered.startswith("/reminder list"):
+                reminders = (
+                    db.query(models.Reminder)
+                    .order_by(models.Reminder.remind_at.asc())
+                    .limit(10)
+                    .all()
+                )
+                if not reminders:
+                    self._send_text(client, base_url, chat_id, "No reminders yet.")
+                    return
+
+                lines = ["Upcoming reminders:"]
+                for r in reminders:
+                    lines.append(f"#{r.id} [{r.status}] {r.remind_at.isoformat()} - {r.message[:50]}")
+                self._send_text(client, base_url, chat_id, "\n".join(lines))
+                return
+
+            if lowered.startswith("/summary"):
+                summary = get_today_summary(db)
+                self._send_text(
+                    client,
+                    base_url,
+                    chat_id,
+                    "Today summary:\n"
+                    f"Captures: {summary.captures_today}\n"
+                    f"Open tasks: {summary.tasks_open}\n"
+                    f"Pending reminders: {summary.reminders_pending}\n"
+                    f"Sent today: {summary.reminders_sent_today}",
+                )
                 return
 
             self._send_text(client, base_url, chat_id, "Unknown command. Use /help")

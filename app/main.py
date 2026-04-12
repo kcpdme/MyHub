@@ -4,6 +4,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from starlette.middleware.sessions import SessionMiddleware
 
 from app import models
 from app.config import settings
@@ -16,6 +17,12 @@ from app.services.reminder_dispatcher import dispatch_reminder
 from app.services.telegram_bot import TelegramBotWorker
 
 app = FastAPI(title=settings.app_name)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.notes_encryption_key or settings.app_api_key,
+    session_cookie="hub_session",
+    same_site="lax",
+)
 app.include_router(web_router)
 app.include_router(api_router)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

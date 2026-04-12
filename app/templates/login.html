@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ title }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/style.css?v=20260412k" />
+  </head>
+  <body>
+    <main class="app-shell login-shell">
+      <section class="panel login-card login-grid">
+        <aside class="login-aside">
+          <h1 class="sidebar-title">Personal Automation Hub</h1>
+          <p class="sidebar-subtitle">A private matte workspace for captures, reminders, tasks, and Telegram inbox automation.</p>
+          <div class="login-badges">
+            <span class="login-badge">Telegram Auth</span>
+            <span class="login-badge">Encrypted Notes</span>
+            <span class="login-badge">Auto Inbox</span>
+          </div>
+        </aside>
+
+        <div class="login-form-wrap">
+          <h2 class="login-title">Secure Sign In</h2>
+          <p class="muted">Receive one-time code on Telegram and unlock your dashboard.</p>
+
+          <button id="sendCodeBtn" type="button">Send Code To Telegram</button>
+
+          <label class="field-label" for="loginCode">Enter Code</label>
+          <input id="loginCode" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code" />
+
+          <button id="verifyCodeBtn" type="button">Open Dashboard</button>
+          <div id="loginStatus" class="status-banner" aria-live="polite"></div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const sendCodeBtn = document.getElementById("sendCodeBtn");
+      const verifyCodeBtn = document.getElementById("verifyCodeBtn");
+      const loginCodeInput = document.getElementById("loginCode");
+      const loginStatus = document.getElementById("loginStatus");
+
+      function setLoginStatus(message, type = "") {
+        loginStatus.textContent = message;
+        loginStatus.classList.remove("success", "error");
+        if (type) {
+          loginStatus.classList.add(type);
+        }
+      }
+
+      sendCodeBtn.addEventListener("click", async () => {
+        sendCodeBtn.disabled = true;
+        try {
+          const response = await fetch("/auth/telegram/request-code", { method: "POST" });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.detail || "Failed to send code");
+          }
+          setLoginStatus("Code sent to your Telegram. Check bot chat and enter it here.", "success");
+        } catch (err) {
+          setLoginStatus(`Send failed: ${err.message}`, "error");
+        } finally {
+          sendCodeBtn.disabled = false;
+        }
+      });
+
+      verifyCodeBtn.addEventListener("click", async () => {
+        const code = loginCodeInput.value.trim();
+        if (!code) {
+          setLoginStatus("Enter the code first.", "error");
+          return;
+        }
+
+        verifyCodeBtn.disabled = true;
+        try {
+          const response = await fetch("/auth/telegram/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.detail || "Verification failed");
+          }
+          setLoginStatus("Authenticated. Opening dashboard...", "success");
+          window.location.href = "/";
+        } catch (err) {
+          setLoginStatus(`Verification failed: ${err.message}`, "error");
+        } finally {
+          verifyCodeBtn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -17,7 +17,9 @@ const reminderTargetInput = document.getElementById("reminderTarget");
 const reminderDateInput = document.getElementById("reminderDate");
 const reminderTimeInput = document.getElementById("reminderTime");
 const reminderTimeHint = document.getElementById("reminderTimeHint");
-const presetButtons = document.querySelectorAll(".preset-btn");
+const reminderPresetButtons = document.querySelectorAll("#reminderQuickTime .preset-btn");
+const sectionButtons = document.querySelectorAll(".nav-link[data-section]");
+const sectionViews = document.querySelectorAll(".section-view[data-section]");
 
 const defaultReminderTarget = reminderTargetInput?.dataset?.defaultTarget || "";
 if (reminderTargetInput && !reminderTargetInput.value && defaultReminderTarget) {
@@ -85,10 +87,10 @@ function setDefaultReminderDateTime() {
 }
 
 function clearPresetActive() {
-  presetButtons.forEach((button) => button.classList.remove("active"));
+  reminderPresetButtons.forEach((button) => button.classList.remove("active"));
 }
 
-presetButtons.forEach((button) => {
+reminderPresetButtons.forEach((button) => {
   button.addEventListener("click", () => {
     const minutes = button.dataset.minutes;
     const preset = button.dataset.preset;
@@ -108,6 +110,26 @@ presetButtons.forEach((button) => {
   });
 });
 
+function showSection(sectionName) {
+  sectionViews.forEach((view) => {
+    view.classList.toggle("is-hidden", view.dataset.section !== sectionName);
+  });
+
+  sectionButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.section === sectionName);
+  });
+
+  localStorage.setItem("automation_hub_section", sectionName);
+}
+
+sectionButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    showSection(button.dataset.section);
+  });
+});
+
+showSection(localStorage.getItem("automation_hub_section") || "summary");
+
 if (reminderDateInput && reminderTimeInput) {
   reminderDateInput.addEventListener("input", () => {
     clearPresetActive();
@@ -124,6 +146,27 @@ const keyStorage = "automation_hub_api_key";
 apiKeyInput.value = localStorage.getItem(keyStorage) || "";
 if (apiKeyInput.value) {
   apiKeyStatus.textContent = "API key loaded from this browser.";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function nl2br(value) {
+  return escapeHtml(value).replaceAll("\n", "<br>");
+}
+
+function setListHtml(listEl, html, emptyMessage) {
+  if (!html) {
+    listEl.innerHTML = `<li class="muted">${escapeHtml(emptyMessage)}</li>`;
+    return;
+  }
+  listEl.innerHTML = html;
 }
 
 saveKeyBtn.addEventListener("click", () => {
@@ -165,7 +208,16 @@ async function api(path, options = {}) {
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || response.statusText);
+    let message = text || response.statusText;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.detail) {
+        message = typeof parsed.detail === "string" ? parsed.detail : JSON.stringify(parsed.detail);
+      }
+    } catch {
+      // Keep raw text if error body is not JSON.
+    }
+    throw new Error(message);
   }
 
   return response.json();
@@ -178,10 +230,12 @@ function fmtDate(iso) {
 
 captureForm.addEventListener("submit", async (e) => {
   e.preventDefault();
+  const submitBtn = captureForm.querySelector("button[type='submit']");
+  submitBtn.disabled = true;
   try {
     const payload = {
-      content: document.getElementById("captureContent").value,
-      url: document.getElementById("captureUrl").value,
+      content: document.getElementById("captureContent").value.trim(),
+      url: document.getElementById("captureUrl").value.trim(),
     };
     await api("/api/captures", { method: "POST", body: JSON.stringify(payload) });
     captureForm.reset();
@@ -190,15 +244,22 @@ captureForm.addEventListener("submit", async (e) => {
     setStatus("Capture saved.", "success");
   } catch (err) {
     setStatus(`Capture failed: ${err.message}`, "error");
+  } finally {
+    submitBtn.disabled = false;
   }
 });
 
 taskForm.addEventListener("submit", async (e) => {
   e.preventDefault();
+  const submitBtn = taskForm.querySelector("button[type='submit']");
+  submitBtn.disabled = true;
   try {
+    const rawDate = document.getElementById("taskDueDate").value;
+    const due_date = rawDate ? new Date(rawDate + "T23:59:59").toISOString() : null;
     const payload = {
-      title: document.getElementById("taskTitle").value,
+      title: document.getElementById("taskTitle").value.trim(),
       priority: document.getElementById("taskPriority").value,
+      due_date: due_date
     };
     await api("/api/tasks", { method: "POST", body: JSON.stringify(payload) });
     taskForm.reset();
@@ -207,15 +268,30 @@ taskForm.addEventListener("submit", async (e) => {
     setStatus("Task saved.", "success");
   } catch (err) {
     setStatus(`Task save failed: ${err.message}`, "error");
+  } finally {
+    submitBtn.disabled = false;
   }
+});
+
+let currentTaskFilter = "all";
+const taskFilterBtns = document.querySelectorAll("#taskFilters button");
+taskFilterBtns.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    taskFilterBtns.forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentTaskFilter = btn.dataset.filter;
+    refreshTasks();
+  });
 });
 
 noteForm.addEventListener("submit", async (e) => {
   e.preventDefault();
+  const submitBtn = noteForm.querySelector("button[type='submit']");
+  submitBtn.disabled = true;
   try {
     const payload = {
-      title: document.getElementById("noteTitle").value,
-      content: document.getElementById("noteContent").value,
+      title: document.getElementById("noteTitle").value.trim(),
+      content: document.getElementById("noteContent").value.trim(),
     };
     await api("/api/notes", { method: "POST", body: JSON.stringify(payload) });
     noteForm.reset();
@@ -223,6 +299,8 @@ noteForm.addEventListener("submit", async (e) => {
     setStatus("Encrypted note saved.", "success");
   } catch (err) {
     setStatus(`Note save failed: ${err.message}`, "error");
+  } finally {
+    submitBtn.disabled = false;
   }
 });
 
@@ -234,13 +312,15 @@ reminderForm.addEventListener("submit", async (e) => {
     return;
   }
 
+  const submitBtn = reminderForm.querySelector("button[type='submit']");
+  submitBtn.disabled = true;
   try {
     const isRecurring = document.getElementById("reminderRecurring").checked;
     const recurrenceMinutesValue = document.getElementById("recurrenceMinutes").value;
     const payload = {
-      message: document.getElementById("reminderMessage").value,
+      message: document.getElementById("reminderMessage").value.trim(),
       channel: document.getElementById("reminderChannel").value,
-      target: reminderTargetInput.value,
+      target: reminderTargetInput.value.trim(),
       remind_at: selected.toISOString(),
       is_recurring: isRecurring,
       recurrence_minutes: isRecurring && recurrenceMinutesValue ? Number(recurrenceMinutesValue) : null,
@@ -256,27 +336,43 @@ reminderForm.addEventListener("submit", async (e) => {
     setStatus("Reminder scheduled.", "success");
   } catch (err) {
     setStatus(`Reminder scheduling failed: ${err.message}`, "error");
+  } finally {
+    submitBtn.disabled = false;
   }
 });
 
 async function refreshCaptures() {
   const items = await api("/api/captures");
-  capturesList.innerHTML = items
+  const html = items
     .map(
       (i) =>
-        `<li><div>${i.content}</div><div class="muted">${i.url || ""} ${fmtDate(i.created_at)}</div></li>`,
+        `<li><div>${escapeHtml(i.content)}</div><div class="muted">${escapeHtml(i.url || "")} ${fmtDate(i.created_at)}</div></li>`,
     )
     .join("");
+  setListHtml(capturesList, html, "No captures yet.");
+}
+
+async function toggleTaskStatus(taskId, nextStatus) {
+  await api(`/api/tasks/${taskId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: nextStatus }),
+  });
 }
 
 async function refreshTasks() {
   const items = await api("/api/tasks");
-  tasksList.innerHTML = items
+  const filtered = currentTaskFilter === "all" ? items : items.filter(i => i.status === currentTaskFilter);
+  const html = filtered
     .map(
       (i) =>
-        `<li><div>${i.title}</div><div class="muted">${i.status} | ${i.priority} | ${fmtDate(i.due_date)}</div></li>`,
+        `<li>
+          <div style="text-decoration: ${i.status === 'done' ? 'line-through' : 'none'}">${escapeHtml(i.title)}</div>
+          <div class="muted">${escapeHtml(i.status)} | ${escapeHtml(i.priority)} ${i.due_date ? ' | Due: ' + fmtDate(i.due_date) : ''}</div>
+          <button class="ghost" onclick="toggleTaskStatus(${i.id}, '${i.status === "done" ? "todo" : "done"}')">${i.status === "done" ? "Mark Todo" : "Mark Done"}</button>
+        </li>`,
     )
     .join("");
+  setListHtml(tasksList, html, "No tasks here.");
 }
 
 function sendNow(reminderId) {
@@ -299,33 +395,35 @@ function deleteNote(noteId) {
 
 async function refreshNotes() {
   const items = await api("/api/notes");
-  notesList.innerHTML = items
+  const html = items
     .map(
       (i) =>
         `<li>
-          <div><strong>${i.title || "Untitled"}</strong></div>
-          <div>${i.content}</div>
+          <div><strong>${escapeHtml(i.title || "Untitled")}</strong></div>
+          <div>${nl2br(i.content)}</div>
           <div class="muted">updated ${fmtDate(i.updated_at)}</div>
           <button class="ghost" onclick="deleteNote(${i.id})">Delete</button>
         </li>`,
     )
     .join("");
+  setListHtml(notesList, html, "No notes yet.");
 }
 
 async function refreshReminders() {
   const items = await api("/api/reminders");
-  remindersList.innerHTML = items
+  const html = items
     .map(
       (i) =>
         `<li>
-          <div>${i.message}</div>
-          <div class="muted">${i.channel} -> ${i.target}</div>
-          <div class="muted">at ${fmtDate(i.remind_at)} | status: ${i.status}</div>
+          <div>${escapeHtml(i.message)}</div>
+          <div class="muted">${escapeHtml(i.channel)} -> ${escapeHtml(i.target)}</div>
+          <div class="muted">at ${fmtDate(i.remind_at)} | status: ${escapeHtml(i.status)}</div>
           <div class="muted">${i.is_recurring ? `recurs every ${i.recurrence_minutes} min` : "one-time"}</div>
           <button onclick="sendNow(${i.id})">Send Now</button>
         </li>`,
     )
     .join("");
+  setListHtml(remindersList, html, "No reminders yet.");
 }
 
 async function refreshSummary() {
@@ -343,9 +441,19 @@ async function refreshAll() {
     await Promise.all([refreshCaptures(), refreshTasks(), refreshNotes(), refreshReminders(), refreshSummary()]);
   } catch (err) {
     setStatus(`Load failed: ${err.message}`, "error");
+    showSection("settings");
   }
 }
 
 window.sendNow = sendNow;
 window.deleteNote = deleteNote;
+window.toggleTaskStatus = (taskId, nextStatus) => {
+  toggleTaskStatus(taskId, nextStatus)
+    .then(async () => {
+      await refreshTasks();
+      await refreshSummary();
+      setStatus("Task updated.", "success");
+    })
+    .catch((err) => setStatus(`Task update failed: ${err.message}`, "error"));
+};
 refreshAll();

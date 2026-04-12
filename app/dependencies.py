@@ -1,10 +1,13 @@
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, Request, status
 
 from app.database import SessionLocal
 from app.services.api_keys import validate_api_key
 
 
-def require_api_key(x_api_key: str = Header(default="")) -> None:
+def require_api_key(request: Request, x_api_key: str = Header(default="")) -> None:
+    if request.session.get("authenticated") is True:
+        return
+
     db = SessionLocal()
     try:
         if validate_api_key(db, x_api_key):

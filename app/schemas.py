@@ -119,3 +119,24 @@ class TelegramUserOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class InboxItemOut(BaseModel):
+    id: int
+    source: str
+    telegram_user_id: str
+    chat_id: str
+    message_id: int
+    item_type: str
+    text: str
+    file_id: str
+    file_unique_id: str
+    media_group_id: str
+    is_archived: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class InboxPromoteTaskCreate(BaseModel):
+    priority: str = "medium"

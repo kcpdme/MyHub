@@ -1,9 +1,11 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.config import settings
 from app.database import get_db
 from app.dependencies import require_api_key
 from app.services.api_keys import generate_api_key, hash_api_key
@@ -13,6 +15,143 @@ from app.services.summary_service import get_today_summary
 
 router = APIRouter(prefix="/api", tags=["api"], dependencies=[Depends(require_api_key)])
 
+ALLOWED_TASK_PRIORITIES = {"low", "medium", "high"}
+ALLOWED_TASK_STATUSES = {"todo", "done"}
+
+
+@router.get("/inbox", response_model=list[schemas.InboxItemOut])
+def list_inbox(include_archived: bool = False, db: Session = Depends(get_db)):
+    query = db.query(models.TelegramInboxItem)
+    if not include_archived:
+        query = query.filter(models.TelegramInboxItem.is_archived.is_(False))
+    return query.order_by(models.TelegramInboxItem.created_at.desc()).limit(300).all()
+
+
+@router.get("/inbox/{item_id}/media")
+def inbox_media(item_id: int, db: Session = Depends(get_db)):
+    item = db.query(models.TelegramInboxItem).filter(models.TelegramInboxItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Inbox item not found")
+    if not item.file_id:
+        raise HTTPException(status_code=404, detail="Inbox item has no media")
+    if not settings.telegram_bot_token:
+        raise HTTPException(status_code=400, detail="Telegram bot token is not configured")
+
+    try:
+        with httpx.Client(timeout=20) as client:
+            file_meta = client.get(
+                f"https://api.telegram.org/bot{settings.telegram_bot_token}/getFile",
+                params={"file_id": item.file_id},
+            )
+            file_meta.raise_for_status()
+            payload = file_meta.json()
+            file_path = ((payload.get("result") or {}).get("file_path") or "").strip()
+            if not file_path:
+                raise HTTPException(status_code=502, detail="Unable to resolve Telegram media file path")
+
+            media_response = client.get(
+                f"https://api.telegram.org/file/bot{settings.telegram_bot_token}/{file_path}",
+            )
+            media_response.raise_for_status()
+            media_type = media_response.headers.get("content-type", "application/octet-stream")
+            if media_type == "application/octet-stream":
+                if item.item_type in {"photo", "sticker"}:
+                    media_type = "image/jpeg"
+                elif item.item_type == "animation":
+                    media_type = "image/gif"
+            return Response(content=media_response.content, media_type=media_type)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Media fetch failed: {exc}")
+
+
+@router.post("/inbox/{item_id}/archive")
+def archive_inbox_item(item_id: int, db: Session = Depends(get_db)):
+    item = db.query(models.TelegramInboxItem).filter(models.TelegramInboxItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Inbox item not found")
+    item.is_archived = True
+    db.add(item)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/inbox/{item_id}/analyze")
+def analyze_inbox_item(item_id: int, db: Session = Depends(get_db)):
+    item = db.query(models.TelegramInboxItem).filter(models.TelegramInboxItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Inbox item not found")
+    
+    # AI Classification Mock
+    text_content = str(item.text).lower() + " " + item.item_type
+    tags = ["[AI]"]
+    if "photo" in text_content or "video" in text_content:
+        tags.append("#media")
+    if "http" in text_content or "www" in text_content:
+        tags.append("#link")
+    if "todo" in text_content or "need" in text_content or "buy" in text_content:
+        tags.append("#actionable")
+    if "invoice" in text_content or "$" in text_content or "receipt" in text_content or "bill" in text_content:
+        tags.append("#finance")
+    if "pass" in text_content or "code" in text_content:
+        tags.append("#auth")
+    if len(tags) == 1:
+        tags.append("#general")
+        
+    tag_str = " ".join(set(tags))
+    if not item.text:
+        item.text = tag_str
+    elif "[AI]" not in item.text:
+        item.text = f"{item.text}\n\n{tag_str}"
+        
+    db.add(item)
+    db.commit()
+    return {"ok": True, "tags": tag_str}
+
+
+@router.post("/inbox/{item_id}/to-capture", response_model=schemas.CaptureOut)
+def promote_inbox_to_capture(item_id: int, db: Session = Depends(get_db)):
+    item = db.query(models.TelegramInboxItem).filter(models.TelegramInboxItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Inbox item not found")
+
+    content = item.text.strip()
+    if not content:
+        content = f"[{item.item_type}] Telegram media item #{item.message_id}"
+
+    capture = models.Capture(content=content, url="")
+    item.is_archived = True
+    db.add(capture)
+    db.add(item)
+    db.commit()
+    db.refresh(capture)
+    return capture
+
+
+@router.post("/inbox/{item_id}/to-task", response_model=schemas.TaskOut)
+def promote_inbox_to_task(
+    item_id: int,
+    payload: schemas.InboxPromoteTaskCreate,
+    db: Session = Depends(get_db),
+):
+    item = db.query(models.TelegramInboxItem).filter(models.TelegramInboxItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Inbox item not found")
+
+    priority = payload.priority.strip().lower()
+    if priority not in ALLOWED_TASK_PRIORITIES:
+        raise HTTPException(status_code=400, detail="priority must be low, medium, or high")
+
+    title = item.text.strip() or f"Review Telegram {item.item_type} item #{item.message_id}"
+    task = models.Task(title=title[:255], status="todo", priority=priority)
+    item.is_archived = True
+    db.add(task)
+    db.add(item)
+    db.commit()
+    db.refresh(task)
+    return task
+
 
 @router.get("/captures", response_model=list[schemas.CaptureOut])
 def list_captures(db: Session = Depends(get_db)):
@@ -21,7 +160,11 @@ def list_captures(db: Session = Depends(get_db)):
 
 @router.post("/captures", response_model=schemas.CaptureOut)
 def create_capture(payload: schemas.CaptureCreate, db: Session = Depends(get_db)):
-    capture = models.Capture(content=payload.content, url=payload.url)
+    content = payload.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="content cannot be empty")
+
+    capture = models.Capture(content=content, url=payload.url.strip())
     db.add(capture)
     db.commit()
     db.refresh(capture)
@@ -35,7 +178,15 @@ def list_tasks(db: Session = Depends(get_db)):
 
 @router.post("/tasks", response_model=schemas.TaskOut)
 def create_task(payload: schemas.TaskCreate, db: Session = Depends(get_db)):
-    task = models.Task(title=payload.title, priority=payload.priority, due_date=payload.due_date)
+    title = payload.title.strip()
+    priority = payload.priority.strip().lower()
+
+    if not title:
+        raise HTTPException(status_code=400, detail="title cannot be empty")
+    if priority not in ALLOWED_TASK_PRIORITIES:
+        raise HTTPException(status_code=400, detail="priority must be low, medium, or high")
+
+    task = models.Task(title=title, priority=priority, due_date=payload.due_date)
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -49,9 +200,15 @@ def update_task(task_id: int, payload: schemas.TaskUpdate, db: Session = Depends
         raise HTTPException(status_code=404, detail="Task not found")
 
     if payload.status is not None:
-        task.status = payload.status
+        status = payload.status.strip().lower()
+        if status not in ALLOWED_TASK_STATUSES:
+            raise HTTPException(status_code=400, detail="status must be todo or done")
+        task.status = status
     if payload.priority is not None:
-        task.priority = payload.priority
+        priority = payload.priority.strip().lower()
+        if priority not in ALLOWED_TASK_PRIORITIES:
+            raise HTTPException(status_code=400, detail="priority must be low, medium, or high")
+        task.priority = priority
     if payload.due_date is not None:
         task.due_date = payload.due_date
 
@@ -77,9 +234,9 @@ def create_reminder(payload: schemas.ReminderCreate, db: Session = Depends(get_d
 
     recurrence_minutes = payload.recurrence_minutes if payload.is_recurring else None
     reminder = models.Reminder(
-        message=payload.message,
+        message=payload.message.strip(),
         channel=channel,
-        target=payload.target,
+        target=payload.target.strip(),
         remind_at=payload.remind_at,
         is_recurring=payload.is_recurring,
         recurrence_minutes=recurrence_minutes,
@@ -135,7 +292,7 @@ def create_note(payload: schemas.NoteCreate, db: Session = Depends(get_db)):
     now = datetime.utcnow()
     note = models.EncryptedNote(
         title=payload.title.strip(),
-        cipher_text=encrypt_text(payload.content),
+        cipher_text=encrypt_text(payload.content.strip()),
         created_at=now,
         updated_at=now,
     )
@@ -170,9 +327,10 @@ def list_allowed_telegram_users(db: Session = Depends(get_db)):
 @router.post("/telegram/allowlist", response_model=schemas.TelegramUserOut)
 def add_allowed_telegram_user(payload: schemas.TelegramUserCreate, db: Session = Depends(get_db)):
     user_id = payload.telegram_user_id.strip()
+    display_name = payload.display_name.strip()
     existing = db.query(models.AllowedTelegramUser).filter(models.AllowedTelegramUser.telegram_user_id == user_id).first()
     if existing:
-        existing.display_name = payload.display_name.strip()
+        existing.display_name = display_name
         existing.is_active = True
         db.add(existing)
         db.commit()
@@ -181,7 +339,7 @@ def add_allowed_telegram_user(payload: schemas.TelegramUserCreate, db: Session =
 
     record = models.AllowedTelegramUser(
         telegram_user_id=user_id,
-        display_name=payload.display_name.strip(),
+        display_name=display_name,
         is_active=True,
     )
     db.add(record)
@@ -212,7 +370,7 @@ def list_api_keys(db: Session = Depends(get_db)):
 def create_api_key(payload: schemas.ApiKeyCreate, db: Session = Depends(get_db)):
     plain = generate_api_key()
     record = models.ApiKey(
-        name=payload.name.strip() or "generated",
+        name=payload.name.strip()[:120] or "generated",
         key_hash=hash_api_key(plain),
         is_active=True,
     )
