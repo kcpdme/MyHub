@@ -22,6 +22,16 @@ function navLabel(id) {
   return "Settings";
 }
 
+function sectionSubtitle(id) {
+  if (id === "summary") return "Operational health and activity overview.";
+  if (id === "captures") return "Capture ideas, links, and context instantly.";
+  if (id === "inbox") return "Review and triage Telegram intake quickly.";
+  if (id === "tasks") return "Plan and track execution priorities.";
+  if (id === "notes") return "Store and manage encrypted private notes.";
+  if (id === "reminders") return "Schedule outbound reminders and follow-ups.";
+  return "Configure access, API keys, and workspace preferences.";
+}
+
 function toIsoLocalDateTime(minutesFromNow = 15) {
   const next = new Date(Date.now() + minutesFromNow * 60000);
   next.setSeconds(0, 0);
@@ -35,6 +45,7 @@ function toIsoLocalDateTime(minutesFromNow = 15) {
 
 function App() {
   const [section, setSection] = useState(localStorage.getItem("hub_section") || "summary");
+  const [density, setDensity] = useState(localStorage.getItem("hub_density") || "comfortable");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [apiKey, setApiKey] = useState(localStorage.getItem(keyStorage) || "");
   const [status, setStatus] = useState("");
@@ -130,6 +141,10 @@ function App() {
   }, [section]);
 
   useEffect(() => {
+    localStorage.setItem("hub_density", density);
+  }, [density]);
+
+  useEffect(() => {
     const onResize = () => {
       if (window.innerWidth > 880) {
         setSidebarOpen(true);
@@ -140,11 +155,38 @@ function App() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === "Escape" && sidebarOpen && window.innerWidth <= 900) {
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [sidebarOpen]);
+
   function openSection(id) {
     setSection(id);
     if (window.innerWidth <= 880) {
       setSidebarOpen(false);
     }
+  }
+
+  function focusSectionInput() {
+    const firstField = document.querySelector(".section-panel input, .section-panel textarea, .section-panel select");
+    if (firstField) {
+      firstField.focus();
+    }
+  }
+
+  function renderEmptyState(title, hint, actionLabel = "", onAction = focusSectionInput) {
+    return html`<li className="empty-state-card">
+      <div className="empty-state-title">${title}</div>
+      <div className="muted">${hint}</div>
+      ${actionLabel
+        ? html`<button className="ghost empty-cta" onClick=${onAction}>${actionLabel}</button>`
+        : ""}
+    </li>`;
   }
 
   useEffect(() => {
@@ -311,13 +353,13 @@ function App() {
   const navItems = ["summary", "captures", "inbox", "tasks", "notes", "reminders", "settings"];
 
   return html`
-    <main className="app-shell">
+    <main className=${`app-shell density-${density}`}>
       <div className="toast-container">
         ${toasts.map(t => html`<div key=${t.id} className=${`toast ${t.kind}`}>${t.message}</div>`)}
       </div>
       <div className="dashboard-layout">
         ${sidebarOpen && window.innerWidth <= 900 ? html`<button className="sidebar-backdrop" onClick=${() => setSidebarOpen(false)} aria-label="Close menu"></button>` : ""}
-        <aside className=${`panel sidebar ${sidebarOpen ? "open" : ""}`}>
+        <aside id="main-sidebar" className=${`panel sidebar ${sidebarOpen ? "open" : ""}`} aria-hidden=${window.innerWidth <= 900 ? !sidebarOpen : false}>
           <div className="workspace-badge">Operations Console</div>
           <div className="brand">Personal Automation Hub</div>
           <div className="muted">Unified command workspace</div>
@@ -332,11 +374,18 @@ function App() {
         <section className="main-content">
           <header className="panel topbar">
             <div className="topbar-left">
-              <button className="menu-toggle" onClick=${() => setSidebarOpen((v) => !v)}>Menu</button>
+              <button className="menu-toggle" onClick=${() => setSidebarOpen((v) => !v)} aria-controls="main-sidebar" aria-expanded=${sidebarOpen}>Menu</button>
               <h1>Command Center</h1>
-              <div className="muted">Current module: ${navLabel(section)} • Live workspace</div>
+              <div className="topbar-meta">
+                <span className="module-pill">${navLabel(section)}</span>
+                <span className="muted">${new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</span>
+              </div>
+              <div className="muted">${sectionSubtitle(section)}</div>
             </div>
             <div className="topbar-right">
+              <button className="ghost density-toggle" onClick=${() => setDensity((v) => (v === "comfortable" ? "compact" : "comfortable"))}>
+                ${density === "comfortable" ? "Compact" : "Comfortable"}
+              </button>
               <button className="ghost refresh-btn" onClick=${refreshAll} disabled=${busy}>Refresh</button>
               <div className=${`status-pill ${statusKind}`}>${busy ? "Syncing..." : status || "Ready"}</div>
             </div>
@@ -344,8 +393,10 @@ function App() {
 
           ${section === "summary" &&
           html`<section className="panel section-panel">
-            <h2>Today Summary</h2>
-            <p className="muted">Snapshot of current operations and delivery health.</p>
+            <div className="section-head">
+              <h2>Today Summary</h2>
+              <p className="muted">Snapshot of current operations and delivery health.</p>
+            </div>
             <div className="summary-grid">
               <article className="summary-item"><span>Captures</span><strong>${summary?.captures_today ?? 0}</strong></article>
               <article className="summary-item"><span>Open Tasks</span><strong>${summary?.tasks_open ?? 0}</strong></article>
@@ -356,7 +407,10 @@ function App() {
 
           ${section === "captures" &&
           html`<section className="panel section-panel">
-            <h2>Quick Capture</h2>
+            <div className="section-head">
+              <h2>Quick Capture</h2>
+              <p className="muted">Save context immediately before it gets lost.</p>
+            </div>
             <form onSubmit=${submitCapture} className="stack">
               <textarea required value=${captureForm.content} onInput=${(e) => setCaptureForm({ ...captureForm, content: e.target.value })} placeholder="Idea, thought, link context" />
               <input type="url" value=${captureForm.url} onInput=${(e) => setCaptureForm({ ...captureForm, url: e.target.value })} placeholder="Optional URL" />
@@ -364,14 +418,16 @@ function App() {
             </form>
             <ul className="list">
               ${captures.map((i) => html`<li><div>${i.content}</div><div className="muted">${i.url || ""} ${formatDate(i.created_at)}</div></li>`)}
-              ${captures.length === 0 && html`<li className="muted">No captures yet.</li>`}
+              ${captures.length === 0 && renderEmptyState("No captures yet", "Use the form above to save your first idea.", "Focus Capture Form")}
             </ul>
           </section>`}
 
           ${section === "inbox" &&
           html`<section className="panel section-panel">
-            <h2>Telegram Inbox</h2>
-            <p className="muted">Anything you share to your Telegram bot lands here automatically.</p>
+            <div className="section-head">
+              <h2>Telegram Inbox</h2>
+              <p className="muted">Anything you share to your Telegram bot lands here automatically.</p>
+            </div>
             <ul className="inbox-grid">
               ${busy && inboxItems.length === 0 ? 
                 [1,2,3].map(() => html`<li>
@@ -401,13 +457,16 @@ function App() {
                   </div>
                 </li>`)
               }
-              ${!busy && inboxItems.length === 0 && html`<li className="muted empty-state">No inbox items yet. Send text, photos, or files to your bot.</li>`}
+              ${!busy && inboxItems.length === 0 && renderEmptyState("Inbox is empty", "Send text, photos, or files to your bot.", "Refresh", refreshAll)}
             </ul>
           </section>`}
 
           ${section === "tasks" &&
           html`<section className="panel section-panel">
-            <h2>Tasks</h2>
+            <div className="section-head">
+              <h2>Tasks</h2>
+              <p className="muted">Prioritize work and update completion status.</p>
+            </div>
             <form onSubmit=${submitTask} className="stack">
               <input required value=${taskForm.title} onInput=${(e) => setTaskForm({ ...taskForm, title: e.target.value })} placeholder="Task title" />
               <div className="row">
@@ -433,13 +492,16 @@ function App() {
                   <button className="ghost" onClick=${() => toggleTask(t)}>${t.status === "done" ? "Mark Todo" : "Mark Done"}</button>
                 </li>`,
               )}
-              ${filteredTasks.length === 0 && html`<li className="muted">No tasks in this filter.</li>`}
+              ${filteredTasks.length === 0 && renderEmptyState("No tasks in this filter", "Add a task above and track progress.", "Focus Task Form")}
             </ul>
           </section>`}
 
           ${section === "notes" &&
           html`<section className="panel section-panel">
-            <h2>Encrypted Notes</h2>
+            <div className="section-head">
+              <h2>Encrypted Notes</h2>
+              <p className="muted">Keep sensitive notes protected and searchable.</p>
+            </div>
             <form onSubmit=${submitNote} className="stack">
               <input value=${noteForm.title} onInput=${(e) => setNoteForm({ ...noteForm, title: e.target.value })} placeholder="Title" />
               <textarea required value=${noteForm.content} onInput=${(e) => setNoteForm({ ...noteForm, content: e.target.value })} placeholder="Private note" />
@@ -454,13 +516,16 @@ function App() {
                   <button className="ghost" onClick=${() => deleteNote(n.id)}>Delete</button>
                 </li>`,
               )}
-              ${notes.length === 0 && html`<li className="muted">No notes yet.</li>`}
+              ${notes.length === 0 && renderEmptyState("No notes yet", "Create your first encrypted note above.", "Focus Note Form")}
             </ul>
           </section>`}
 
           ${section === "reminders" &&
           html`<section className="panel section-panel">
-            <h2>Reminders</h2>
+            <div className="section-head">
+              <h2>Reminders</h2>
+              <p className="muted">Schedule message delivery with optional recurrence.</p>
+            </div>
             <form onSubmit=${submitReminder} className="stack">
               <input required value=${reminderForm.message} onInput=${(e) => setReminderForm({ ...reminderForm, message: e.target.value })} placeholder="Reminder message" />
               <input required value=${reminderForm.target} onInput=${(e) => setReminderForm({ ...reminderForm, target: e.target.value })} placeholder="Telegram chat id" />
@@ -486,14 +551,16 @@ function App() {
                   <button onClick=${() => sendNow(r.id)}>Send Now</button>
                 </li>`,
               )}
-              ${reminders.length === 0 && html`<li className="muted">No reminders yet.</li>`}
+              ${reminders.length === 0 && renderEmptyState("No reminders yet", "Schedule a reminder using the form above.", "Focus Reminder Form")}
             </ul>
           </section>`}
 
           ${section === "settings" &&
           html`<section className="panel section-panel">
-            <h2>Settings</h2>
-            <p className="muted">Telegram session auth is enabled. API key is optional for external API clients.</p>
+            <div className="section-head">
+              <h2>Settings</h2>
+              <p className="muted">Telegram session auth is enabled. API key is optional for external API clients.</p>
+            </div>
             <div className="stack">
               <input type="password" placeholder="Optional X-API-Key" value=${apiKey} onInput=${(e) => setApiKey(e.target.value)} />
               <button
