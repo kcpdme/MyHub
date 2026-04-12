@@ -77,6 +77,17 @@ def archive_inbox_item(item_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@router.post("/inbox/archive-all")
+def archive_all_inbox_items(db: Session = Depends(get_db)):
+    count = (
+        db.query(models.TelegramInboxItem)
+        .filter(models.TelegramInboxItem.is_archived.is_(False))
+        .update({"is_archived": True})
+    )
+    db.commit()
+    return {"ok": True, "archived": count}
+
+
 @router.post("/inbox/{item_id}/analyze")
 def analyze_inbox_item(item_id: int, db: Session = Depends(get_db)):
     item = db.query(models.TelegramInboxItem).filter(models.TelegramInboxItem.id == item_id).first()
@@ -181,6 +192,24 @@ def delete_capture(capture_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@router.patch("/captures/{capture_id}", response_model=schemas.CaptureOut)
+def update_capture(capture_id: int, payload: schemas.CaptureUpdate, db: Session = Depends(get_db)):
+    capture = db.query(models.Capture).filter(models.Capture.id == capture_id).first()
+    if not capture:
+        raise HTTPException(status_code=404, detail="Capture not found")
+    if payload.content is not None:
+        content = payload.content.strip()
+        if not content:
+            raise HTTPException(status_code=400, detail="content cannot be empty")
+        capture.content = content
+    if payload.url is not None:
+        capture.url = payload.url.strip()
+    db.add(capture)
+    db.commit()
+    db.refresh(capture)
+    return capture
+
+
 @router.get("/tasks", response_model=list[schemas.TaskOut])
 def list_tasks(db: Session = Depends(get_db)):
     return db.query(models.Task).order_by(models.Task.created_at.desc()).limit(200).all()
@@ -209,6 +238,11 @@ def update_task(task_id: int, payload: schemas.TaskUpdate, db: Session = Depends
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    if payload.title is not None:
+        title = payload.title.strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="title cannot be empty")
+        task.title = title
     if payload.status is not None:
         status = payload.status.strip().lower()
         if status not in ALLOWED_TASK_STATUSES:
@@ -347,6 +381,43 @@ def delete_note(note_id: int, db: Session = Depends(get_db)):
     db.delete(note)
     db.commit()
     return {"ok": True}
+
+
+@router.put("/notes/{note_id}", response_model=schemas.NoteOut)
+def update_note(note_id: int, payload: schemas.NoteUpdate, db: Session = Depends(get_db)):
+    note = db.query(models.EncryptedNote).filter(models.EncryptedNote.id == note_id).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    now = datetime.utcnow()
+    title = note.title
+    content = None
+
+    if payload.title is not None:
+        title = payload.title.strip()
+    if payload.content is not None:
+        content = payload.content.strip()
+        if not content:
+            raise HTTPException(status_code=400, detail="content cannot be empty")
+        note.cipher_text = encrypt_text(content)
+    else:
+        try:
+            content = decrypt_text(note.cipher_text)
+        except Exception:
+            content = "<decryption failed>"
+
+    note.title = title
+    note.updated_at = now
+    db.add(note)
+    db.commit()
+    db.refresh(note)
+    return schemas.NoteOut(
+        id=note.id,
+        title=note.title,
+        content=content,
+        created_at=note.created_at,
+        updated_at=note.updated_at,
+    )
 
 
 @router.get("/telegram/allowlist", response_model=list[schemas.TelegramUserOut])

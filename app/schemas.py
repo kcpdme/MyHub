@@ -8,6 +8,11 @@ class CaptureCreate(BaseModel):
     url: str = ""
 
 
+class CaptureUpdate(BaseModel):
+    content: str | None = None
+    url: str | None = None
+
+
 class CaptureOut(BaseModel):
     id: int
     content: str
@@ -24,6 +29,7 @@ class TaskCreate(BaseModel):
 
 
 class TaskUpdate(BaseModel):
+    title: str | None = None
     status: str | None = None
     priority: str | None = None
     due_date: datetime | None = None
@@ -96,6 +102,11 @@ class ApiKeyOut(BaseModel):
 class NoteCreate(BaseModel):
     title: str = ""
     content: str = Field(min_length=1)
+
+
+class NoteUpdate(BaseModel):
+    title: str | None = None
+    content: str | None = None
 
 
 class NoteOut(BaseModel):

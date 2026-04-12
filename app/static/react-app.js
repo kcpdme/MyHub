@@ -38,6 +38,12 @@ function Icon({ name, size = 18 }) {
     repeat: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>`,
     key: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></svg>`,
     save: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>`,
+    copy: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`,
+    edit: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+    x: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
+    "alert-triangle": html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`,
+    activity: html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>`,
+    "archive-x": html`<svg width=${s} height=${s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="m9.5 17 5-5"/><path d="m9.5 12 5 5"/></svg>`,
   };
   return icons[name] || null;
 }
@@ -85,6 +91,15 @@ function toIsoLocalDateTime(minutesFromNow = 15) {
   return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
 }
 
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const NAV_CONFIG = [
   { id: "summary", label: "Overview", icon: "layout-dashboard" },
   { id: "captures", label: "Captures", icon: "pen-line" },
@@ -105,6 +120,88 @@ const SECTION_META = {
   settings: { title: "Settings", subtitle: "Configure keys, preferences, and workspace." },
 };
 
+/* ─── Confirm Dialog Component ─── */
+function ConfirmDialog({ message, onConfirm, onCancel }) {
+  return html`
+    <div className="confirm-overlay" onClick=${onCancel}>
+      <div className="confirm-modal" onClick=${(e) => e.stopPropagation()}>
+        <div className="confirm-icon">
+          <${Icon} name="alert-triangle" size=${24} />
+        </div>
+        <div className="confirm-content">
+          <h3>Confirm Action</h3>
+          <p>${message}</p>
+        </div>
+        <div className="confirm-actions">
+          <button className="ghost" onClick=${onCancel}> Cancel</button>
+          <button className="danger-ghost" onClick=${onConfirm}>
+            <${Icon} name="trash" size=${14} /> Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/* ─── Edit Modal Component ─── */
+function EditModal({ title, fields, values, onSave, onCancel }) {
+  const [formValues, setFormValues] = useState({ ...values });
+
+  return html`
+    <div className="confirm-overlay" onClick=${onCancel}>
+      <div className="edit-modal" onClick=${(e) => e.stopPropagation()}>
+        <div className="edit-modal-header">
+          <h3><${Icon} name="edit" size=${16} /> ${title}</h3>
+          <button className="btn-icon ghost" onClick=${onCancel}><${Icon} name="x" size=${16} /></button>
+        </div>
+        <div className="edit-modal-body">
+          ${fields.map(f => html`
+            <div key=${f.key} style=${{ marginBottom: "0.65rem" }}>
+              <label className="field-label">${f.label}</label>
+              ${f.type === "textarea"
+                ? html`<textarea
+                    value=${formValues[f.key] || ""}
+                    onInput=${(e) => setFormValues({ ...formValues, [f.key]: e.target.value })}
+                    rows="4"
+                    placeholder=${f.placeholder || ""}
+                  />`
+                : html`<input
+                    type=${f.type || "text"}
+                    value=${formValues[f.key] || ""}
+                    onInput=${(e) => setFormValues({ ...formValues, [f.key]: e.target.value })}
+                    placeholder=${f.placeholder || ""}
+                  />`
+              }
+            </div>
+          `)}
+        </div>
+        <div className="confirm-actions">
+          <button className="ghost" onClick=${onCancel}>Cancel</button>
+          <button onClick=${() => onSave(formValues)}>
+            <${Icon} name="save" size=${14} /> Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/* ─── Progress Bar Component ─── */
+function ProgressBar({ value, max, label, color = "var(--green-500)" }) {
+  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
+  return html`
+    <div className="progress-wrapper">
+      <div className="progress-header">
+        <span className="progress-label">${label}</span>
+        <span className="progress-value">${value}${max > 0 ? ` / ${max}` : ""}</span>
+      </div>
+      <div className="progress-track">
+        <div className="progress-fill" style=${{ width: `${pct}%`, background: color }}></div>
+      </div>
+    </div>
+  `;
+}
+
 /* ─── Main App ─── */
 function App() {
   const [section, setSection] = useState(localStorage.getItem("hub_section") || "summary");
@@ -117,6 +214,7 @@ function App() {
   const [toasts, setToasts] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(localStorage.getItem("hub_auto_refresh") !== "false");
 
   const [captures, setCaptures] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -137,6 +235,10 @@ function App() {
     recurrenceMinutes: "",
   });
 
+  /* ─── Confirm / Edit Dialog State ─── */
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const [editDialog, setEditDialog] = useState(null);
+
   const searchRef = useRef(null);
 
   /* ─── Toast System ─── */
@@ -152,6 +254,11 @@ function App() {
     setStatus(message);
     setStatusKind(kind);
     addToast(message, kind);
+  }
+
+  /* ─── Confirm Helper ─── */
+  function confirmAction(message, action) {
+    setConfirmDialog({ message, action });
   }
 
   /* ─── API Helper ─── */
@@ -194,7 +301,15 @@ function App() {
   /* ─── Effects ─── */
   useEffect(() => { localStorage.setItem("hub_section", section); }, [section]);
   useEffect(() => { localStorage.setItem("hub_density", density); }, [density]);
+  useEffect(() => { localStorage.setItem("hub_auto_refresh", autoRefresh); }, [autoRefresh]);
   useEffect(() => { refreshAll(); }, []);
+
+  /* ─── Auto-refresh every 60 seconds ─── */
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const timer = setInterval(() => { refreshAll(); }, 60000);
+    return () => clearInterval(timer);
+  }, [autoRefresh]);
 
   useEffect(() => {
     const onResize = () => { if (window.innerWidth > 900) setSidebarOpen(true); };
@@ -208,6 +323,8 @@ function App() {
     const onKeyDown = (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
       if (e.key === "Escape") {
+        if (confirmDialog) { setConfirmDialog(null); return; }
+        if (editDialog) { setEditDialog(null); return; }
         if (showShortcuts) { setShowShortcuts(false); return; }
         if (sidebarOpen && window.innerWidth <= 900) { setSidebarOpen(false); return; }
       }
@@ -219,7 +336,7 @@ function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [showShortcuts, sidebarOpen]);
+  }, [showShortcuts, sidebarOpen, confirmDialog, editDialog]);
 
   /* ─── Navigation ─── */
   function openSection(id) {
@@ -240,11 +357,32 @@ function App() {
   }
 
   async function deleteCapture(id) {
-    try {
-      await api(`/api/captures/${id}`, { method: "DELETE" });
-      await refreshAll();
-      setAppStatus("Capture deleted.", "success");
-    } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
+    confirmAction("Delete this capture permanently?", async () => {
+      try {
+        await api(`/api/captures/${id}`, { method: "DELETE" });
+        await refreshAll();
+        setAppStatus("Capture deleted.", "success");
+      } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
+    });
+  }
+
+  function editCapture(c) {
+    setEditDialog({
+      title: "Edit Capture",
+      fields: [
+        { key: "content", label: "Content", type: "textarea", placeholder: "Capture content…" },
+        { key: "url", label: "URL", type: "url", placeholder: "Optional URL reference" },
+      ],
+      values: { content: c.content, url: c.url || "" },
+      onSave: async (vals) => {
+        try {
+          await api(`/api/captures/${c.id}`, { method: "PATCH", body: JSON.stringify(vals) });
+          setEditDialog(null);
+          await refreshAll();
+          setAppStatus("Capture updated.", "success");
+        } catch (err) { setAppStatus(`Update failed: ${err.message}`, "error"); }
+      },
+    });
   }
 
   /* ─── CRUD: Tasks ─── */
@@ -274,11 +412,31 @@ function App() {
   }
 
   async function deleteTask(id) {
-    try {
-      await api(`/api/tasks/${id}`, { method: "DELETE" });
-      await refreshAll();
-      setAppStatus("Task deleted.", "success");
-    } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
+    confirmAction("Delete this task permanently?", async () => {
+      try {
+        await api(`/api/tasks/${id}`, { method: "DELETE" });
+        await refreshAll();
+        setAppStatus("Task deleted.", "success");
+      } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
+    });
+  }
+
+  function editTask(t) {
+    setEditDialog({
+      title: "Edit Task",
+      fields: [
+        { key: "title", label: "Title", type: "text", placeholder: "Task title" },
+      ],
+      values: { title: t.title },
+      onSave: async (vals) => {
+        try {
+          await api(`/api/tasks/${t.id}`, { method: "PATCH", body: JSON.stringify(vals) });
+          setEditDialog(null);
+          await refreshAll();
+          setAppStatus("Task updated.", "success");
+        } catch (err) { setAppStatus(`Update failed: ${err.message}`, "error"); }
+      },
+    });
   }
 
   /* ─── CRUD: Notes ─── */
@@ -293,11 +451,32 @@ function App() {
   }
 
   async function deleteNote(id) {
-    try {
-      await api(`/api/notes/${id}`, { method: "DELETE" });
-      await refreshAll();
-      setAppStatus("Note deleted.", "success");
-    } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
+    confirmAction("Delete this encrypted note permanently?", async () => {
+      try {
+        await api(`/api/notes/${id}`, { method: "DELETE" });
+        await refreshAll();
+        setAppStatus("Note deleted.", "success");
+      } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
+    });
+  }
+
+  function editNote(n) {
+    setEditDialog({
+      title: "Edit Note",
+      fields: [
+        { key: "title", label: "Title", type: "text", placeholder: "Note title (optional)" },
+        { key: "content", label: "Content", type: "textarea", placeholder: "Note content…" },
+      ],
+      values: { title: n.title || "", content: n.content || "" },
+      onSave: async (vals) => {
+        try {
+          await api(`/api/notes/${n.id}`, { method: "PUT", body: JSON.stringify(vals) });
+          setEditDialog(null);
+          await refreshAll();
+          setAppStatus("Note updated.", "success");
+        } catch (err) { setAppStatus(`Update failed: ${err.message}`, "error"); }
+      },
+    });
   }
 
   /* ─── CRUD: Reminders ─── */
@@ -326,17 +505,29 @@ function App() {
   }
 
   async function deleteReminder(id) {
-    try {
-      await api(`/api/reminders/${id}`, { method: "DELETE" });
-      await refreshAll();
-      setAppStatus("Reminder deleted.", "success");
-    } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
+    confirmAction("Delete this reminder permanently?", async () => {
+      try {
+        await api(`/api/reminders/${id}`, { method: "DELETE" });
+        await refreshAll();
+        setAppStatus("Reminder deleted.", "success");
+      } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
+    });
   }
 
   /* ─── Inbox Actions ─── */
   async function archiveInbox(id) {
     try { await api(`/api/inbox/${id}/archive`, { method: "POST" }); await refreshAll(); setAppStatus("Archived.", "success"); }
     catch (err) { setAppStatus(`Archive failed: ${err.message}`, "error"); }
+  }
+
+  async function archiveAllInbox() {
+    confirmAction(`Archive all ${inboxItems.length} inbox items?`, async () => {
+      try {
+        const resp = await api("/api/inbox/archive-all", { method: "POST" });
+        await refreshAll();
+        setAppStatus(`Archived ${resp.archived} items.`, "success");
+      } catch (err) { setAppStatus(`Archive failed: ${err.message}`, "error"); }
+    });
   }
 
   async function inboxToCapture(id) {
@@ -404,6 +595,12 @@ function App() {
     return inboxItems.filter((i) => (i.text || "").toLowerCase().includes(q) || i.item_type.toLowerCase().includes(q));
   }, [inboxItems, searchQuery, section]);
 
+  /* ─── Computed stats ─── */
+  const tasksDone = tasks.filter(t => t.status === "done").length;
+  const tasksTotal = tasks.length;
+  const remindersSent = reminders.filter(r => r.status === "sent").length;
+  const remindersTotal = reminders.length;
+
   /* ─── Render Helpers ─── */
   function renderEmptyState(iconName, title, hint, actionLabel = "", onAction) {
     return html`<div className="empty-state">
@@ -424,6 +621,26 @@ function App() {
       <div className="toast-container">
         ${toasts.map(t => html`<div key=${t.id} className=${`toast ${t.kind}`}>${t.message}</div>`)}
       </div>
+
+      <!-- Confirm Dialog -->
+      ${confirmDialog && html`
+        <${ConfirmDialog}
+          message=${confirmDialog.message}
+          onConfirm=${async () => { await confirmDialog.action(); setConfirmDialog(null); }}
+          onCancel=${() => setConfirmDialog(null)}
+        />
+      `}
+
+      <!-- Edit Dialog -->
+      ${editDialog && html`
+        <${EditModal}
+          title=${editDialog.title}
+          fields=${editDialog.fields}
+          values=${editDialog.values}
+          onSave=${editDialog.onSave}
+          onCancel=${() => setEditDialog(null)}
+        />
+      `}
 
       <!-- Keyboard Shortcuts Modal -->
       ${showShortcuts && html`
@@ -473,7 +690,7 @@ function App() {
               >
                 <${Icon} name=${item.icon} size=${18} />
                 ${item.label}
-                ${item.id === "inbox" && inboxItems.length > 0 ? html`<span className="nav-badge">${inboxItems.length}</span>` : ""}
+                ${item.id === "inbox" && inboxItems.length > 0 ? html`<span className="nav-badge pulse-badge">${inboxItems.length}</span>` : ""}
                 ${item.id === "tasks" && tasks.filter(t => t.status !== "done").length > 0 ? html`<span className="nav-badge">${tasks.filter(t => t.status !== "done").length}</span>` : ""}
                 ${item.id === "reminders" && reminders.filter(r => r.status === "pending").length > 0 ? html`<span className="nav-badge">${reminders.filter(r => r.status === "pending").length}</span>` : ""}
               </button>
@@ -537,22 +754,22 @@ function App() {
                 <p className="muted">Real-time snapshot of your operational health.</p>
               </div>
               <div className="summary-grid">
-                <article className="summary-card card-accent">
+                <article className="summary-card card-green">
                   <div className="summary-card-icon"><${Icon} name="pen-line" size=${20} /></div>
                   <div className="summary-card-label">Captures Today</div>
                   <div className="summary-card-value">${summary?.captures_today ?? 0}</div>
                 </article>
-                <article className="summary-card card-warning">
+                <article className="summary-card card-amber">
                   <div className="summary-card-icon"><${Icon} name="check-square" size=${20} /></div>
                   <div className="summary-card-label">Open Tasks</div>
                   <div className="summary-card-value">${summary?.tasks_open ?? 0}</div>
                 </article>
-                <article className="summary-card card-purple">
+                <article className="summary-card card-blue">
                   <div className="summary-card-icon"><${Icon} name="bell" size=${20} /></div>
                   <div className="summary-card-label">Pending Reminders</div>
                   <div className="summary-card-value">${summary?.reminders_pending ?? 0}</div>
                 </article>
-                <article className="summary-card card-success">
+                <article className="summary-card card-teal">
                   <div className="summary-card-icon"><${Icon} name="send" size=${20} /></div>
                   <div className="summary-card-label">Sent Today</div>
                   <div className="summary-card-value">${summary?.reminders_sent_today ?? 0}</div>
@@ -560,17 +777,38 @@ function App() {
               </div>
             </section>
 
+            <!-- Progress Overview -->
+            <section className="panel section-panel">
+              <div className="section-head">
+                <h2><${Icon} name="activity" /> Progress Tracker</h2>
+                <p className="muted">Visual breakdown of your productivity.</p>
+              </div>
+              <div className="progress-grid">
+                <${ProgressBar} value=${tasksDone} max=${tasksTotal} label="Tasks Completed" color="var(--green-500)" />
+                <${ProgressBar} value=${remindersSent} max=${remindersTotal} label="Reminders Delivered" color="var(--blue-600)" />
+                <${ProgressBar} value=${captures.length} max=${Math.max(captures.length, 10)} label="Captures Collected" color="var(--amber-600)" />
+                <${ProgressBar} value=${notes.length} max=${Math.max(notes.length, 5)} label="Notes Stored" color="var(--teal-600)" />
+              </div>
+            </section>
+
             <!-- Quick Capture on Summary -->
             <section className="panel section-panel">
               <div className="section-head">
-                <h2><${Icon} name="zap" /> Quick Capture</h2>
-                <p className="muted">Don't lose your thought — capture it now.</p>
+                <h2><${Icon} name="zap" /> Quick Actions</h2>
+                <p className="muted">Capture ideas or create tasks without leaving the overview.</p>
               </div>
-              <form onSubmit=${submitCapture} className="quick-capture-bar">
-                <${Icon} name="pen-line" size=${18} />
-                <input required value=${captureForm.content} onInput=${(e) => setCaptureForm({ ...captureForm, content: e.target.value })} placeholder="What's on your mind?" />
-                <button type="submit" className="sm" disabled=${busy}><${Icon} name="plus" size=${14} /> Capture</button>
-              </form>
+              <div className="quick-actions-grid">
+                <form onSubmit=${submitCapture} className="quick-capture-bar">
+                  <${Icon} name="pen-line" size=${18} />
+                  <input required value=${captureForm.content} onInput=${(e) => setCaptureForm({ ...captureForm, content: e.target.value })} placeholder="Quick capture…" />
+                  <button type="submit" className="sm" disabled=${busy}><${Icon} name="plus" size=${14} /> Capture</button>
+                </form>
+                <form onSubmit=${submitTask} className="quick-capture-bar">
+                  <${Icon} name="check-square" size=${18} />
+                  <input required value=${taskForm.title} onInput=${(e) => setTaskForm({ ...taskForm, title: e.target.value })} placeholder="Quick task…" />
+                  <button type="submit" className="sm" disabled=${busy}><${Icon} name="plus" size=${14} /> Task</button>
+                </form>
+              </div>
             </section>
 
             <!-- Recent Activity -->
@@ -593,6 +831,11 @@ function App() {
                     </div>
                   `)}
                 </div>
+                ${captures.length > 5 ? html`
+                  <div style=${{ marginTop: "0.75rem", textAlign: "center" }}>
+                    <button className="ghost sm" onClick=${() => openSection("captures")}>View All ${captures.length} Captures →</button>
+                  </div>
+                ` : ""}
               </section>
             `}
           `}
@@ -622,6 +865,12 @@ function App() {
                           </div>
                         </div>
                         <div className="list-item-actions">
+                          <button className="btn-icon ghost sm" onClick=${() => { copyToClipboard(c.content); setAppStatus("Copied to clipboard.", "success"); }} title="Copy">
+                            <${Icon} name="copy" size=${14} />
+                          </button>
+                          <button className="btn-icon ghost sm" onClick=${() => editCapture(c)} title="Edit">
+                            <${Icon} name="edit" size=${14} />
+                          </button>
                           <button className="btn-icon danger-ghost sm" onClick=${() => deleteCapture(c.id)} title="Delete">
                             <${Icon} name="trash" size=${14} />
                           </button>
@@ -638,8 +887,17 @@ function App() {
           ${section === "inbox" && html`
             <section className="panel section-panel" id="section-inbox">
               <div className="section-head">
-                <h2><${Icon} name="inbox" /> Telegram Inbox</h2>
-                <p className="muted">Anything shared to your Telegram bot lands here automatically.</p>
+                <div className="section-head-row">
+                  <div>
+                    <h2><${Icon} name="inbox" /> Telegram Inbox</h2>
+                    <p className="muted">Anything shared to your Telegram bot lands here automatically.</p>
+                  </div>
+                  ${inboxItems.length > 1 ? html`
+                    <button className="ghost sm" onClick=${archiveAllInbox}>
+                      <${Icon} name="archive-x" size=${14} /> Archive All (${inboxItems.length})
+                    </button>
+                  ` : ""}
+                </div>
               </div>
               ${busy && filteredInbox.length === 0 ? html`
                 <div className="inbox-grid">
@@ -719,6 +977,13 @@ function App() {
                 `)}
               </div>
 
+              <!-- Task progress bar -->
+              ${tasksTotal > 0 ? html`
+                <div style=${{ margin: "0.75rem 0 0.25rem" }}>
+                  <${ProgressBar} value=${tasksDone} max=${tasksTotal} label="Completion" color="var(--green-500)" />
+                </div>
+              ` : ""}
+
               <div style=${{ marginTop: "0.5rem" }}>
                 ${filteredTasks.length > 0 ? html`
                   <div className="list">
@@ -741,6 +1006,9 @@ function App() {
                           </div>
                         </div>
                         <div className="list-item-actions">
+                          <button className="btn-icon ghost sm" onClick=${() => editTask(t)} title="Edit">
+                            <${Icon} name="edit" size=${14} />
+                          </button>
                           <button className="btn-icon danger-ghost sm" onClick=${() => deleteTask(t.id)} title="Delete">
                             <${Icon} name="trash" size=${14} />
                           </button>
@@ -762,7 +1030,12 @@ function App() {
               </div>
               <form onSubmit=${submitNote} className="stack">
                 <input value=${noteForm.title} onInput=${(e) => setNoteForm({ ...noteForm, title: e.target.value })} placeholder="Note title (optional)" />
-                <textarea required value=${noteForm.content} onInput=${(e) => setNoteForm({ ...noteForm, content: e.target.value })} placeholder="Write your private note here…" rows="4" />
+                <div style=${{ position: "relative" }}>
+                  <textarea required value=${noteForm.content} onInput=${(e) => setNoteForm({ ...noteForm, content: e.target.value })} placeholder="Write your private note here…" rows="4" />
+                  ${noteForm.content.length > 0 ? html`
+                    <div className="char-count">${noteForm.content.length} chars · ${noteForm.content.split(/\s+/).filter(Boolean).length} words</div>
+                  ` : ""}
+                </div>
                 <button disabled=${busy}><${Icon} name="save" size=${16} /> Save Encrypted Note</button>
               </form>
               <div style=${{ marginTop: "1.25rem" }}>
@@ -775,9 +1048,16 @@ function App() {
                           <div style=${{ color: "var(--text-secondary)", fontSize: "0.88rem", whiteSpace: "pre-wrap", marginTop: "0.3rem", lineHeight: 1.6 }}>${n.content}</div>
                           <div className="list-item-meta" style=${{ marginTop: "0.5rem" }}>
                             <span><${Icon} name="clock" size=${12} /> Updated ${formatDate(n.updated_at)}</span>
+                            <span>${n.content.length} chars</span>
                           </div>
                         </div>
                         <div className="list-item-actions">
+                          <button className="btn-icon ghost sm" onClick=${() => { copyToClipboard(n.content); setAppStatus("Note copied.", "success"); }} title="Copy">
+                            <${Icon} name="copy" size=${14} />
+                          </button>
+                          <button className="btn-icon ghost sm" onClick=${() => editNote(n)} title="Edit">
+                            <${Icon} name="edit" size=${14} />
+                          </button>
                           <button className="btn-icon danger-ghost sm" onClick=${() => deleteNote(n.id)} title="Delete">
                             <${Icon} name="trash" size=${14} />
                           </button>
@@ -847,6 +1127,7 @@ function App() {
                             <span><${Icon} name="send" size=${12} /> ${r.channel} → ${r.target}</span>
                             <span><${Icon} name="clock" size=${12} /> ${formatDate(r.remind_at)}</span>
                             ${r.is_recurring ? html`<span><${Icon} name="repeat" size=${12} /> every ${r.recurrence_minutes}m</span>` : ""}
+                            ${r.last_error ? html`<span className="error-text" title=${r.last_error}>⚠ error</span>` : ""}
                           </div>
                         </div>
                         <div className="list-item-actions">
@@ -898,6 +1179,17 @@ function App() {
                     <button className=${`ghost sm ${density === "comfortable" ? "active" : ""}`} onClick=${() => setDensity("comfortable")}>Comfortable</button>
                     <button className=${`ghost sm ${density === "compact" ? "active" : ""}`} onClick=${() => setDensity("compact")}>Compact</button>
                   </div>
+                </div>
+
+                <div className="sidebar-divider" style=${{ margin: "0.5rem 0" }}></div>
+
+                <div>
+                  <div className="field-label">Auto-Refresh</div>
+                  <p className="muted" style=${{ marginBottom: "0.5rem", fontSize: "0.82rem" }}>Automatically refresh data every 60 seconds.</p>
+                  <label className="inline-check">
+                    <input type="checkbox" checked=${autoRefresh} onChange=${(e) => setAutoRefresh(e.target.checked)} />
+                    Enable auto-refresh
+                  </label>
                 </div>
 
                 <div className="sidebar-divider" style=${{ margin: "0.5rem 0" }}></div>
