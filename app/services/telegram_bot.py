@@ -288,6 +288,20 @@ def _handle_message(
             )
             return
 
+        # ── Shorthand command aliases ──
+        # Map single-word commands to their multi-word equivalents so users
+        # can type /notes instead of /note list, etc.
+        _ALIASES = {
+            "/notes": "/note list",
+            "/tasks": "/task list",
+            "/reminders": "/reminder list",
+            "/captures": "/capture list",
+            "/inbox": "/inbox list",
+        }
+        if lowered.strip() in _ALIASES:
+            lowered = _ALIASES[lowered.strip()]
+            text = lowered  # rewrite for downstream handlers
+
         # ── Non-command messages → save to inbox ──
         is_command = bool(text.strip().startswith("/"))
         if not is_command:

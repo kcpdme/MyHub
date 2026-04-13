@@ -95,6 +95,27 @@ async def lifespan(app: FastAPI):
     db: Session = SessionLocal()
     try:
         ensure_bootstrap_api_key(db, settings.app_api_key)
+
+        # Auto-register the owner's Telegram user ID in the bot allowlist
+        # so they never get "Access denied" from their own bot.
+        if settings.telegram_chat_id:
+            owner_id = settings.telegram_chat_id.strip()
+            existing = (
+                db.query(models.AllowedTelegramUser)
+                .filter(models.AllowedTelegramUser.telegram_user_id == owner_id)
+                .first()
+            )
+            if not existing:
+                db.add(models.AllowedTelegramUser(
+                    telegram_user_id=owner_id,
+                    display_name="owner (auto-registered)",
+                    is_active=True,
+                ))
+                db.commit()
+            elif not existing.is_active:
+                existing.is_active = True
+                db.add(existing)
+                db.commit()
     finally:
         db.close()
 

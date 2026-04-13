@@ -1,4 +1,10 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Project root = parent of this file's parent (app/config.py → workspace/)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_DEFAULT_DB = f"sqlite:///{_PROJECT_ROOT / 'automation_hub.db'}"
 
 
 class Settings(BaseSettings):
@@ -10,7 +16,7 @@ class Settings(BaseSettings):
     app_api_key: str = "change-me"
     app_version: str = "2.0.0"
 
-    database_url: str = "sqlite:///./automation_hub.db"
+    database_url: str = _DEFAULT_DB
     scheduler_poll_seconds: int = 30
     daily_summary_enabled: bool = False
     daily_summary_time_utc: str = "19:00"
