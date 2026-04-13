@@ -775,6 +775,63 @@ select {
   grid-auto-rows: 1fr;
   gap: 1rem;
 }
+.inbox-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.inbox-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-8);
+  background: var(--surface-2);
+}
+.inbox-list {
+  gap: 0.6rem;
+}
+.inbox-list-item {
+  align-items: center;
+  padding: 0.72rem 0.82rem;
+  gap: 0.7rem;
+}
+.inbox-list-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-8);
+  border: 1px solid var(--line-soft);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform var(--fast), background var(--fast), border-color var(--fast);
+}
+.inbox-list-item:hover .inbox-list-icon {
+  transform: translateY(-1px);
+  background: var(--surface-3);
+  border-color: var(--line);
+}
+.inbox-list-title {
+  margin-bottom: 0.1rem;
+  display: -webkit-box;
+  line-clamp: 2;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.inbox-list-actions {
+  gap: 0.35rem;
+}
+.inbox-list-actions .btn-icon {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+}
 .inbox-card {
   margin: 0;
   background: var(--surface);
@@ -898,6 +955,9 @@ select {
   background: rgba(220, 38, 38, 0.9);
 }
 .inbox-card-skeleton {
+  pointer-events: none;
+}
+.inbox-list-skeleton {
   pointer-events: none;
 }
 .inbox-skeleton-line {
@@ -1365,9 +1425,12 @@ html.dark .confirm-overlay {
   .row-2, .row-3 { grid-template-columns: 1fr; }
   .login-grid { grid-template-columns: 1fr; }
   .login-aside { padding: 1.5rem 1.75rem; }
+  .inbox-head-actions { width: 100%; justify-content: space-between; }
   .inbox-grid { grid-template-columns: 1fr; }
   .inbox-card-actions { justify-content: space-between; }
   .inbox-card-text { line-clamp: 4; -webkit-line-clamp: 4; }
+  .inbox-list-item { align-items: flex-start; }
+  .inbox-list-actions { flex-wrap: wrap; justify-content: flex-end; }
   .summary-grid { grid-template-columns: repeat(2,1fr); }
   .quick-capture-bar { flex-direction: column; }
   .quick-capture-bar button { width: 100%; }

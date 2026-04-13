@@ -372,6 +372,7 @@ function PomodoroTimer({ addToast }) {
 function App() {
   const [section, setSection] = useState(localStorage.getItem("hub_section") || "summary");
   const [density, setDensity] = useState(localStorage.getItem("hub_density") || "comfortable");
+  const [inboxView, setInboxView] = useState(localStorage.getItem("hub_inbox_view") || "list");
   const [darkMode, setDarkMode] = useState(isMiniApp ? true : localStorage.getItem("hub_dark_mode") === "true");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Mini App mode: read API key from sessionStorage (set by miniapp.html auth handshake).
@@ -506,6 +507,7 @@ function App() {
   /* ─── Effects ─── */
   useEffect(() => { localStorage.setItem("hub_section", section); }, [section]);
   useEffect(() => { localStorage.setItem("hub_density", density); }, [density]);
+  useEffect(() => { localStorage.setItem("hub_inbox_view", inboxView); }, [inboxView]);
   useEffect(() => { localStorage.setItem("hub_auto_refresh", autoRefresh); }, [autoRefresh]);
   useEffect(() => { refreshAll(); }, []);
 
@@ -840,7 +842,7 @@ function App() {
 
         ${itemCanPreview(item) ? html`
           <img className="inbox-media-preview" src=${`/api/inbox/${item.id}/media`} alt="Inbox media" loading="lazy" onClick=${() => setInboxPreview(item)} />
-        ` : html`<div className="inbox-media-placeholder"><${Icon} name=${inboxTypeIcon(item)} size=${16} /> ${inboxTypeLabel(item)}</div>`}
+        ` : ""}
 
         <div className="inbox-card-content">
           ${canPreviewText ? html`
@@ -876,6 +878,47 @@ function App() {
           </button>
           <button className="btn-icon ghost sm" onClick=${() => analyzeInbox(item.id)} title="Analyze" aria-label="Analyze">
             <${Icon} name="settings" size=${13} />
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderInboxListItem(item) {
+    const hasDownload = itemHasFile(item);
+    const title = item.text || "(no text payload)";
+
+    return html`
+      <div className="list-item inbox-list-item" key=${item.id}>
+        <div className="inbox-list-icon" onClick=${() => setInboxPreview(item)} title="Preview" aria-label="Preview">
+          <${Icon} name=${inboxTypeIcon(item)} size=${14} />
+        </div>
+        <div className="list-item-content">
+          <div className="list-item-title inbox-list-title" onClick=${() => setInboxPreview(item)} style=${{ cursor: "pointer" }}>
+            ${title}
+          </div>
+          <div className="list-item-meta">
+            <span><${Icon} name="clock" size=${12} /> ${formatDate(item.created_at)}</span>
+            <span>msg #${item.message_id}</span>
+          </div>
+        </div>
+        <div className="list-item-actions inbox-list-actions" role="group" aria-label="Inbox item actions">
+          <button className="btn-icon ghost sm" onClick=${() => setInboxPreview(item)} title="Preview" aria-label="Preview">
+            <${Icon} name="search" size=${13} />
+          </button>
+          ${hasDownload ? html`
+            <button className="btn-icon ghost sm" onClick=${() => openInboxFile(item.id)} title="Download" aria-label="Download">
+              <${Icon} name="download" size=${13} />
+            </button>
+          ` : ""}
+          <button className="btn-icon ghost sm" onClick=${() => inboxToCapture(item.id)} title="Promote to capture" aria-label="Promote to capture">
+            <${Icon} name="pen-line" size=${13} />
+          </button>
+          <button className="btn-icon ghost sm" onClick=${() => inboxToTask(item.id)} title="Promote to task" aria-label="Promote to task">
+            <${Icon} name="check-square" size=${13} />
+          </button>
+          <button className="btn-icon ghost sm" onClick=${() => deleteInbox(item.id)} title="Delete permanently" aria-label="Delete permanently">
+            <${Icon} name="trash" size=${13} />
           </button>
         </div>
       </div>
@@ -1315,31 +1358,66 @@ function App() {
                     <h2><${Icon} name="inbox" /> Telegram Inbox</h2>
                     <p className="muted">Anything shared to your Telegram bot lands here automatically.</p>
                   </div>
-                  ${inboxItems.length > 0 ? html`<span className="muted">${inboxItems.length} item${inboxItems.length !== 1 ? "s" : ""}</span>` : ""}
+                  <div className="inbox-head-actions">
+                    ${inboxItems.length > 0 ? html`<span className="muted">${inboxItems.length} item${inboxItems.length !== 1 ? "s" : ""}</span>` : ""}
+                    <div className="inbox-view-toggle" role="group" aria-label="Inbox view">
+                      <button className=${`ghost sm btn-icon ${inboxView === "list" ? "active" : ""}`} onClick=${() => setInboxView("list")} title="List view" aria-label="List view">
+                        <${Icon} name="menu" size=${13} />
+                      </button>
+                      <button className=${`ghost sm btn-icon ${inboxView === "cards" ? "active" : ""}`} onClick=${() => setInboxView("cards")} title="Card view" aria-label="Card view">
+                        <${Icon} name="layout-dashboard" size=${13} />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
               ${busy && filteredInbox.length === 0 ? html`
-                <div className="inbox-grid">
-                  ${[1, 2, 3].map((n) => html`
-                    <div className="inbox-card inbox-card-skeleton" key=${`skeleton-${n}`}>
-                      <div className="inbox-media-placeholder"></div>
-                      <div className="inbox-card-content">
-                        <div className="inbox-skeleton-line w-60"></div>
-                        <div className="inbox-skeleton-line w-100"></div>
-                        <div className="inbox-skeleton-line w-80"></div>
+                ${inboxView === "list" ? html`
+                  <div className="list inbox-list">
+                    ${[1, 2, 3, 4].map((n) => html`
+                      <div className="list-item inbox-list-item inbox-list-skeleton" key=${`skeleton-list-${n}`}>
+                        <span className="inbox-skeleton-dot"></span>
+                        <div className="list-item-content">
+                          <div className="inbox-skeleton-line w-60"></div>
+                          <div className="inbox-skeleton-line w-100"></div>
+                        </div>
+                        <div className="list-item-actions inbox-list-actions">
+                          <span className="inbox-skeleton-dot"></span>
+                          <span className="inbox-skeleton-dot"></span>
+                          <span className="inbox-skeleton-dot"></span>
+                        </div>
                       </div>
-                      <div className="inbox-card-actions">
-                        <span className="inbox-skeleton-dot"></span>
-                        <span className="inbox-skeleton-dot"></span>
-                        <span className="inbox-skeleton-dot"></span>
+                    `)}
+                  </div>
+                ` : html`
+                  <div className="inbox-grid">
+                    ${[1, 2, 3].map((n) => html`
+                      <div className="inbox-card inbox-card-skeleton" key=${`skeleton-${n}`}>
+                        <div className="inbox-media-placeholder"></div>
+                        <div className="inbox-card-content">
+                          <div className="inbox-skeleton-line w-60"></div>
+                          <div className="inbox-skeleton-line w-100"></div>
+                          <div className="inbox-skeleton-line w-80"></div>
+                        </div>
+                        <div className="inbox-card-actions">
+                          <span className="inbox-skeleton-dot"></span>
+                          <span className="inbox-skeleton-dot"></span>
+                          <span className="inbox-skeleton-dot"></span>
+                        </div>
                       </div>
-                    </div>
-                  `)}
-                </div>
+                    `)}
+                  </div>
+                `}
               ` : filteredInbox.length > 0 ? html`
-                <div className="inbox-grid">
-                  ${filteredInbox.map((item) => renderInboxCard(item))}
-                </div>
+                ${inboxView === "list" ? html`
+                  <div className="list inbox-list">
+                    ${filteredInbox.map((item) => renderInboxListItem(item))}
+                  </div>
+                ` : html`
+                  <div className="inbox-grid">
+                    ${filteredInbox.map((item) => renderInboxCard(item))}
+                  </div>
+                `}
               ` : renderEmptyState("inbox", "Inbox is empty", "Send text, photos, or files to your Telegram bot to see them here.", "Refresh", refreshAll)}
             </section>
           `}
