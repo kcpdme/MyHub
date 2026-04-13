@@ -772,12 +772,121 @@ function App() {
     return Boolean(item?.file_id && ["photo", "sticker", "animation"].includes(item.item_type));
   }
 
+  function inboxFileName(item) {
+    const extByType = {
+      text: "txt",
+      photo: "jpg",
+      animation: "gif",
+      sticker: "webp",
+      video: "mp4",
+      audio: "mp3",
+      voice: "ogg",
+      document: "file",
+      unknown: "bin",
+    };
+    const ext = extByType[item?.item_type] || "bin";
+    return `inbox_${item?.id || "item"}.${ext}`;
+  }
+
+  function inboxTypeLabel(item) {
+    const labels = {
+      text: "Text File",
+      photo: "Image",
+      animation: "GIF",
+      sticker: "Sticker",
+      video: "Video",
+      audio: "Audio",
+      voice: "Voice",
+      document: "Document",
+      location: "Location",
+      unknown: "Unknown",
+    };
+    return labels[item?.item_type] || "File";
+  }
+
+  function inboxTypeIcon(item) {
+    const icons = {
+      text: "file-lock",
+      photo: "activity",
+      animation: "activity",
+      sticker: "activity",
+      video: "play",
+      audio: "play",
+      voice: "play",
+      document: "download",
+      location: "target",
+      unknown: "inbox",
+    };
+    return icons[item?.item_type] || "inbox";
+  }
+
   function itemHasFile(item) {
     return Boolean(item?.file_id || item?.item_type === "text");
   }
 
   function openInboxFile(id) {
     window.open(`/api/inbox/${id}/media`, "_blank", "noopener,noreferrer");
+  }
+
+  function renderInboxCard(item) {
+    const hasDownload = itemHasFile(item);
+    const canPreviewText = item.item_type === "text" || !itemCanPreview(item);
+
+    return html`
+      <div className="inbox-card" key=${item.id}>
+        <button className="inbox-delete-btn btn-icon ghost" onClick=${() => deleteInbox(item.id)} title="Delete permanently" aria-label="Delete permanently">
+          <${Icon} name="trash" size=${14} />
+        </button>
+
+        ${itemCanPreview(item) ? html`
+          <img className="inbox-media-preview" src=${`/api/inbox/${item.id}/media`} alt="Inbox media" loading="lazy" onClick=${() => setInboxPreview(item)} />
+        ` : html`<div className="inbox-media-placeholder"><${Icon} name=${inboxTypeIcon(item)} size=${16} /> ${inboxTypeLabel(item)}</div>`}
+
+        <div className="inbox-card-content">
+          <div className="inbox-card-header">
+            <span className="inbox-type-badge">
+              <${Icon} name=${inboxTypeIcon(item)} size=${10} />
+              ${inboxTypeLabel(item)}
+            </span>
+            <span className="muted">${formatDate(item.created_at)}</span>
+          </div>
+
+          ${canPreviewText ? html`
+            <div className="inbox-card-text" onClick=${() => setInboxPreview(item)} style=${{ cursor: "pointer" }}>
+              ${item.text || html`<span className="muted">(no text payload)</span>`}
+            </div>
+          ` : (item.text ? html`
+            <div className="inbox-card-text" onClick=${() => setInboxPreview(item)} style=${{ cursor: "pointer" }}>
+              ${item.text}
+            </div>
+          ` : html`<div className="inbox-card-text muted" onClick=${() => setInboxPreview(item)} style=${{ cursor: "pointer" }}>(media message)</div>`)}
+
+          <div className="inbox-card-meta">
+            <span>msg #${item.message_id}</span>
+          </div>
+        </div>
+
+        <div className="inbox-card-actions" role="group" aria-label="Inbox item actions">
+          <button className="btn-icon ghost sm" onClick=${() => setInboxPreview(item)} title="Preview" aria-label="Preview">
+            <${Icon} name="search" size=${13} />
+          </button>
+          ${hasDownload ? html`
+            <button className="btn-icon ghost sm" onClick=${() => openInboxFile(item.id)} title="Download" aria-label="Download">
+              <${Icon} name="download" size=${13} />
+            </button>
+          ` : ""}
+          <button className="btn-icon ghost sm" onClick=${() => inboxToCapture(item.id)} title="Promote to capture" aria-label="Promote to capture">
+            <${Icon} name="pen-line" size=${13} />
+          </button>
+          <button className="btn-icon ghost sm" onClick=${() => inboxToTask(item.id)} title="Promote to task" aria-label="Promote to task">
+            <${Icon} name="check-square" size=${13} />
+          </button>
+          <button className="btn-icon ghost sm" onClick=${() => analyzeInbox(item.id)} title="Analyze" aria-label="Analyze">
+            <${Icon} name="settings" size=${13} />
+          </button>
+        </div>
+      </div>
+    `;
   }
 
   /* ─── Habits ─── */
@@ -1218,63 +1327,25 @@ function App() {
               </div>
               ${busy && filteredInbox.length === 0 ? html`
                 <div className="inbox-grid">
-                  ${[1,2,3].map(n => html`<div className="inbox-card" key=${n}>
-                    <div style=${{ padding: "1rem" }}>
-                      <div className="skeleton title"></div>
-                      <div className="skeleton thumb"></div>
-                      <div className="skeleton line"></div>
-                      <div className="skeleton line" style=${{ width: "60%" }}></div>
-                    </div>
-                  </div>`)}
-                </div>
-              ` : filteredInbox.length > 0 ? html`
-                <div className="inbox-grid">
-                  ${filteredInbox.map(item => html`
-                    <div className="inbox-card" key=${item.id}>
-                      <div className="inbox-card-header">
-                        <span className="inbox-type-badge">${item.item_type}</span>
-                        <div className="flex-row">
-                          <span className="muted" style=${{ fontSize: "0.75rem" }}>#${item.id}</span>
-                          <button className="ghost sm" onClick=${() => analyzeInbox(item.id)}>
-                            <${Icon} name="tag" size=${12} /> Auto-Tag
-                          </button>
-                        </div>
-                      </div>
-                      <div className="inbox-card-body">
-                        <div className="inbox-thumb-wrap">
-                          ${itemCanPreview(item)
-                            ? html`<img className="inbox-thumb" src=${`/api/inbox/${item.id}/media`} alt="Inbox media" loading="lazy" />`
-                            : html`<div className="inbox-thumb-placeholder"><${Icon} name="inbox" size=${18} /> No image preview</div>`}
-                        </div>
-                        <button className="inbox-text-preview" onClick=${() => setInboxPreview(item)} title="Preview full content">
-                          <div className="inbox-text">${item.text || "(no text content)"}</div>
-                        </button>
-                        <div className="list-item-meta">
-                          <span><${Icon} name="clock" size=${12} /> ${formatDate(item.created_at)}</span>
-                          <span>msg #${item.message_id}</span>
-                        </div>
+                  ${[1, 2, 3].map((n) => html`
+                    <div className="inbox-card inbox-card-skeleton" key=${`skeleton-${n}`}>
+                      <div className="inbox-media-placeholder"></div>
+                      <div className="inbox-card-content">
+                        <div className="inbox-skeleton-line w-60"></div>
+                        <div className="inbox-skeleton-line w-100"></div>
+                        <div className="inbox-skeleton-line w-80"></div>
                       </div>
                       <div className="inbox-card-actions">
-                        <button className="ghost sm" onClick=${() => inboxToCapture(item.id)}>
-                          <${Icon} name="pen-line" size=${12} /> Capture
-                        </button>
-                        <button className="ghost sm" onClick=${() => inboxToTask(item.id)}>
-                          <${Icon} name="check-square" size=${12} /> Task
-                        </button>
-                        <button className="ghost sm" onClick=${() => setInboxPreview(item)}>
-                          <${Icon} name="search" size=${12} /> Preview
-                        </button>
-                        ${itemHasFile(item) ? html`
-                          <button className="ghost sm" onClick=${() => openInboxFile(item.id)}>
-                            <${Icon} name="download" size=${12} /> File
-                          </button>
-                        ` : ""}
-                        <button className="btn-icon danger-ghost sm" onClick=${() => deleteInbox(item.id)} title="Delete permanently" aria-label="Delete permanently">
-                          <${Icon} name="trash" size=${12} />
-                        </button>
+                        <span className="inbox-skeleton-dot"></span>
+                        <span className="inbox-skeleton-dot"></span>
+                        <span className="inbox-skeleton-dot"></span>
                       </div>
                     </div>
                   `)}
+                </div>
+              ` : filteredInbox.length > 0 ? html`
+                <div className="inbox-grid">
+                  ${filteredInbox.map((item) => renderInboxCard(item))}
                 </div>
               ` : renderEmptyState("inbox", "Inbox is empty", "Send text, photos, or files to your Telegram bot to see them here.", "Refresh", refreshAll)}
             </section>

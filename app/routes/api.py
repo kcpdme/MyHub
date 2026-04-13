@@ -166,26 +166,15 @@ def inbox_media(item_id: int, db: Session = Depends(get_db)):
     cache_base = (item.file_unique_id or "").strip() or (item.file_id or "").strip() or f"item_{item.id}"
     r2_key = media_object_key(item.file_unique_id, item.file_id, item.id)
 
-    # Text-only items should also be persisted as downloadable files.
+    # Text-only items just return their text content dynamically
     if item.item_type == "text":
         text_bytes = (item.text or "").encode("utf-8")
         media_type = "text/plain; charset=utf-8"
-        filename = _download_filename(item, media_type, raw_message)
-        cache_path = media_dir / f"{cache_base}.txt"
-
-        try:
-            if not cache_path.exists():
-                cache_path.write_bytes(text_bytes)
-        except Exception:
-            pass
-
-        if is_r2_enabled():
-            put_media_to_r2(r2_key, text_bytes, media_type)
-
+        filename = f"inbox_{item.id}.txt"
         return Response(
             content=text_bytes,
             media_type=media_type,
-            headers={"Content-Disposition": _content_disposition(filename)},
+            headers={"Content-Disposition": f'inline; filename="{filename}"'}
         )
 
     if not item.file_id:
