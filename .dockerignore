@@ -1,8 +1,41 @@
+# Version control
 .git
 .gitignore
-.venv
+.github
+
+# IDE
+.vscode
+.idea
+*.code-workspace
+
+# Python
 __pycache__
 *.pyc
-automation_hub.db
-data
-.vscode
+*.pyo
+*.pyd
+.Python
+.venv
+venv
+env
+
+# Local database files (Postgres runs in Docker, not from local files)
+*.db
+*.db-shm
+*.db-wal
+data/
+
+# Local media cache (mounted as Docker volume in production)
+media/
+
+# Secrets (never bake into image)
+.env
+
+# Docs / local dev artifacts
+docs/
+README.md
+*.md
+
+# Tests
+tests/
+pytest.ini
+.pytest_cache

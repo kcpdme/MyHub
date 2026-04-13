@@ -1,4 +1,30 @@
+# ══════════════════════════════════════════════════════════════════════════════
+#  Personal Automation Hub — Docker Compose
+#
+#  Single command to start everything:
+#    docker compose up -d --build
+#
+#  Services:
+#    db   — PostgreSQL 16 (persistent, never loses data)
+#    app  — FastAPI app (waits for DB, runs migrations, starts server)
+#
+#  First-time setup:
+#    1. Copy .env.example → .env  and fill in your secrets
+#    2. docker compose up -d --build
+#    3. Check logs: docker compose logs -f app
+#
+#  To migrate existing SQLite data (one-time):
+#    docker compose exec app python scripts/migrate_sqlite_to_pg.py \
+#      --sqlite "sqlite:////data/automation_hub.db" \
+#      --pg "${DATABASE_URL}"
+#
+#  Backups (add to server crontab — runs at 3am daily):
+#    0 3 * * * /path/to/scripts/backup_pg.sh >> /var/log/hub_backup.log 2>&1
+# ══════════════════════════════════════════════════════════════════════════════
+
 services:
+
+  # ── PostgreSQL Database ────────────────────────────────────────────────────
   db:
     image: postgres:16-alpine
     container_name: automation-hub-db
@@ -6,36 +32,45 @@ services:
     environment:
       POSTGRES_DB: automationhub
       POSTGRES_USER: hubuser
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_strong_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}   # Set in .env
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data  # Named volume — survives rebuilds
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hubuser -d automationhub"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
-    # NOT exposed to host by default — app connects via internal Docker network.
-    # To connect locally via SSH tunnel: ssh -L 5432:localhost:5432 user@hub.kcpd.top
-    # Then uncomment the next two lines for local access:
-    # ports:
-    #   - "127.0.0.1:5432:5432"
+      retries: 10
+      start_period: 10s
+    # Port NOT exposed to host. App connects via internal Docker network (db:5432).
+    # To connect from your local machine via SSH tunnel:
+    #   ssh -L 5432:localhost:5432 user@hub.kcpd.top
+    #   then use: postgresql://hubuser:pass@localhost:5432/automationhub
 
+  # ── Application ───────────────────────────────────────────────────────────
   app:
     build: .
     container_name: automation-hub
     restart: unless-stopped
     env_file:
-      - .env
+      - .env                          # All your secrets live here
     environment:
-      # Override DATABASE_URL to use the docker-internal postgres service.
-      DATABASE_URL: postgresql://hubuser:${POSTGRES_PASSWORD:-changeme_strong_password}@db:5432/automationhub
+      # Overrides DATABASE_URL from .env to use the db service above.
+      DATABASE_URL: postgresql://hubuser:${POSTGRES_PASSWORD}@db:5432/automationhub
     ports:
-      - "8000:8000"
+      - "8000:8000"                   # Cloudflare tunnel points to this
     volumes:
-      - ./media:/app/media   # Local media cache for Telegram photos
+      - ./media:/app/media            # Telegram photo cache (persists on host)
     depends_on:
       db:
-        condition: service_healthy
+        condition: service_healthy    # App won't start until Postgres passes healthcheck
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+# ── Persistent Volumes ────────────────────────────────────────────────────────
 volumes:
-  postgres_data:   # Persistent named volume — survives container rebuilds
+  postgres_data:
+    # Data lives here even after: docker compose down, rebuilds, updates.
+    # To fully wipe: docker compose down -v  (WARNING: destroys all data)
