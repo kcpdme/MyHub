@@ -843,14 +843,6 @@ function App() {
         ` : html`<div className="inbox-media-placeholder"><${Icon} name=${inboxTypeIcon(item)} size=${16} /> ${inboxTypeLabel(item)}</div>`}
 
         <div className="inbox-card-content">
-          <div className="inbox-card-header">
-            <span className="inbox-type-badge">
-              <${Icon} name=${inboxTypeIcon(item)} size=${10} />
-              ${inboxTypeLabel(item)}
-            </span>
-            <span className="muted">${formatDate(item.created_at)}</span>
-          </div>
-
           ${canPreviewText ? html`
             <div className="inbox-card-text" onClick=${() => setInboxPreview(item)} style=${{ cursor: "pointer" }}>
               ${item.text || html`<span className="muted">(no text payload)</span>`}
@@ -862,6 +854,7 @@ function App() {
           ` : html`<div className="inbox-card-text muted" onClick=${() => setInboxPreview(item)} style=${{ cursor: "pointer" }}>(media message)</div>`)}
 
           <div className="inbox-card-meta">
+            <span>${formatDate(item.created_at)}</span>
             <span>msg #${item.message_id}</span>
           </div>
         </div>
