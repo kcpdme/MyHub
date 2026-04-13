@@ -215,6 +215,41 @@ function EditModal({ title, fields, values, onSave, onCancel }) {
   `;
 }
 
+function InboxPreviewModal({ item, onClose }) {
+  const canPreviewImage = Boolean(item?.file_id && ["photo", "sticker", "animation"].includes(item.item_type));
+  const canOpenFile = Boolean(item?.file_id || item?.item_type === "text");
+
+  return html`
+    <div className="confirm-overlay" onClick=${onClose}>
+      <div className="edit-modal inbox-preview-modal" onClick=${(e) => e.stopPropagation()}>
+        <div className="edit-modal-header">
+          <h3><${Icon} name="inbox" size=${16} /> Inbox #${item.id}</h3>
+          <button className="btn-icon ghost" onClick=${onClose}><${Icon} name="x" size=${16} /></button>
+        </div>
+        <div className="edit-modal-body">
+          <div className="list-item-meta" style=${{ marginBottom: "0.65rem" }}>
+            <span className="status-badge note">${item.item_type}</span>
+            <span><${Icon} name="clock" size=${12} /> ${formatDate(item.created_at)}</span>
+            <span>msg #${item.message_id}</span>
+          </div>
+          ${canPreviewImage ? html`
+            <img className="inbox-thumb" src=${`/api/inbox/${item.id}/media`} alt="Inbox media" />
+          ` : ""}
+          <div className="inbox-preview-text">${item.text || "(no text content)"}</div>
+        </div>
+        <div className="confirm-actions">
+          ${canOpenFile ? html`
+            <button className="ghost" onClick=${() => window.open(`/api/inbox/${item.id}/media`, "_blank", "noopener,noreferrer")}>
+              <${Icon} name="download" size=${14} /> Open File
+            </button>
+          ` : ""}
+          <button className="ghost" onClick=${onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 /* ─── Progress Bar Component ─── */
 function ProgressBar({ value, max, label, color = "var(--green-500)" }) {
   const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
@@ -377,6 +412,7 @@ function App() {
   /* ─── Confirm / Edit Dialog State ─── */
   const [confirmDialog, setConfirmDialog] = useState(null);
   const [editDialog, setEditDialog] = useState(null);
+  const [inboxPreview, setInboxPreview] = useState(null);
 
   const searchRef = useRef(null);
 
@@ -737,7 +773,7 @@ function App() {
   }
 
   function itemHasFile(item) {
-    return Boolean(item?.file_id);
+    return Boolean(item?.file_id || item?.item_type === "text");
   }
 
   function openInboxFile(id) {
@@ -891,6 +927,13 @@ function App() {
           values=${editDialog.values}
           onSave=${editDialog.onSave}
           onCancel=${() => setEditDialog(null)}
+        />
+      `}
+
+      ${inboxPreview && html`
+        <${InboxPreviewModal}
+          item=${inboxPreview}
+          onClose=${() => setInboxPreview(null)}
         />
       `}
 
@@ -1198,8 +1241,14 @@ function App() {
                         </div>
                       </div>
                       <div className="inbox-card-body">
-                        ${itemCanPreview(item) ? html`<img className="inbox-thumb" src=${`/api/inbox/${item.id}/media`} alt="Inbox media" loading="lazy" />` : ""}
-                        <div className="inbox-text">${item.text || "(no text content)"}</div>
+                        <div className="inbox-thumb-wrap">
+                          ${itemCanPreview(item)
+                            ? html`<img className="inbox-thumb" src=${`/api/inbox/${item.id}/media`} alt="Inbox media" loading="lazy" />`
+                            : html`<div className="inbox-thumb-placeholder"><${Icon} name="inbox" size=${18} /> No image preview</div>`}
+                        </div>
+                        <button className="inbox-text-preview" onClick=${() => setInboxPreview(item)} title="Preview full content">
+                          <div className="inbox-text">${item.text || "(no text content)"}</div>
+                        </button>
                         <div className="list-item-meta">
                           <span><${Icon} name="clock" size=${12} /> ${formatDate(item.created_at)}</span>
                           <span>msg #${item.message_id}</span>
@@ -1211,6 +1260,9 @@ function App() {
                         </button>
                         <button className="ghost sm" onClick=${() => inboxToTask(item.id)}>
                           <${Icon} name="check-square" size=${12} /> Task
+                        </button>
+                        <button className="ghost sm" onClick=${() => setInboxPreview(item)}>
+                          <${Icon} name="search" size=${12} /> Preview
                         </button>
                         ${itemHasFile(item) ? html`
                           <button className="ghost sm" onClick=${() => openInboxFile(item.id)}>

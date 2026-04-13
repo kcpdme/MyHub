@@ -1,0 +1,3 @@
+Hi, I joined because I read XDA and found this ROM become available for it (CMF Phone 1). I wanted to read the documentation for BlissRoms and get an overview of all its features, before I decide to change Android OS for the second time.
+
+But when I visit https://docs.blissroms.org I get a 404 error from GitHub pages saying it doesn't exist. Even from the official website and the links here it appears nonexistent. Where can I read about the BlissRom in detail?

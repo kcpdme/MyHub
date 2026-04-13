@@ -87,59 +87,138 @@ def list_inbox(
 
 @router.get("/inbox/{item_id}/media")
 def inbox_media(item_id: int, db: Session = Depends(get_db)):
-    def _extension_for(content_type: str) -> str:
-        ext = mimetypes.guess_extension(content_type or "")
+    def _normalize_content_type(content_type: str) -> str:
+        return (content_type or "application/octet-stream").split(";", 1)[0].strip().lower()
+
+    def _extension_for(content_type: str, filename_hint: str = "") -> str:
+        hinted = Path(filename_hint or "").suffix.strip().lower()
+        if hinted.startswith(".") and len(hinted) > 1:
+            if hinted in {".jpe", ".jpeg"}:
+                return ".jpg"
+            return hinted
+
+        normalized = _normalize_content_type(content_type)
+        ext = mimetypes.guess_extension(normalized)
         if ext in {".jpe", ".jpeg"}:
             return ".jpg"
         if ext:
             return ext
-        if "jpeg" in content_type:
+        if "jpeg" in normalized:
             return ".jpg"
-        if "png" in content_type:
+        if "png" in normalized:
             return ".png"
-        if "gif" in content_type:
+        if "gif" in normalized:
             return ".gif"
-        if "webp" in content_type:
+        if "webp" in normalized:
             return ".webp"
-        if "pdf" in content_type:
+        if "pdf" in normalized:
             return ".pdf"
-        if "video" in content_type:
+        if "plain" in normalized:
+            return ".txt"
+        if "json" in normalized:
+            return ".json"
+        if "csv" in normalized:
+            return ".csv"
+        if "video" in normalized:
             return ".mp4"
-        if "ogg" in content_type:
+        if "ogg" in normalized:
             return ".ogg"
         return ".bin"
+
+    def _parse_raw_message(raw_json: str) -> dict:
+        try:
+            parsed = json.loads(raw_json or "{}")
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+
+    def _filename_hint(item: models.TelegramInboxItem, raw_message: dict) -> str:
+        for field in ("document", "audio", "video"):
+            obj = raw_message.get(field) or {}
+            name = str(obj.get("file_name", "") or "").strip()
+            if name:
+                return name
+        if item.item_type == "text":
+            return f"inbox_{item.id}.txt"
+        return ""
+
+    def _download_filename(item: models.TelegramInboxItem, content_type: str, raw_message: dict) -> str:
+        hint = _filename_hint(item, raw_message)
+        if hint:
+            return Path(hint).name
+        ext = _extension_for(content_type)
+        base_name = (item.file_unique_id or "").strip() or f"inbox_{item.id}"
+        return f"{base_name}{ext}"
 
     item = db.query(models.TelegramInboxItem).filter(models.TelegramInboxItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Inbox item not found")
+
+    raw_message = _parse_raw_message(item.raw_json)
+    def _content_disposition(filename: str) -> str:
+        safe_name = filename.replace('"', "")
+        return f'inline; filename="{safe_name}"'
+
+    # ── Local media cache ────────────────────────────────────────────────────
+    # Cache path is configurable via MEDIA_CACHE_DIR.
+    media_dir = Path(settings.media_cache_dir)
+    media_dir.mkdir(parents=True, exist_ok=True)
+    cache_base = (item.file_unique_id or "").strip() or (item.file_id or "").strip() or f"item_{item.id}"
+    r2_key = media_object_key(item.file_unique_id, item.file_id, item.id)
+
+    # Text-only items should also be persisted as downloadable files.
+    if item.item_type == "text":
+        text_bytes = (item.text or "").encode("utf-8")
+        media_type = "text/plain; charset=utf-8"
+        filename = _download_filename(item, media_type, raw_message)
+        cache_path = media_dir / f"{cache_base}.txt"
+
+        try:
+            if not cache_path.exists():
+                cache_path.write_bytes(text_bytes)
+        except Exception:
+            pass
+
+        if is_r2_enabled():
+            put_media_to_r2(r2_key, text_bytes, media_type)
+
+        return Response(
+            content=text_bytes,
+            media_type=media_type,
+            headers={"Content-Disposition": _content_disposition(filename)},
+        )
+
     if not item.file_id:
         raise HTTPException(status_code=404, detail="Inbox item has no media")
     if not settings.telegram_bot_token:
         raise HTTPException(status_code=400, detail="Telegram bot token is not configured")
 
-    # ── Local media cache ────────────────────────────────────────────────────
-    # Cache path is configurable via MEDIA_CACHE_DIR.
-    media_dir = Path(settings.media_cache_dir)
-    media_dir.mkdir(exist_ok=True)
-    cache_base = (item.file_unique_id or "").strip() or (item.file_id or "").strip() or f"item_{item.id}"
-    r2_key = media_object_key(item.file_unique_id, item.file_id, item.id)
-
     # Check if cached on local disk.
     for cached in media_dir.glob(f"{cache_base}.*"):
         media_type, _ = mimetypes.guess_type(str(cached))
         media_type = media_type or "application/octet-stream"
-        return Response(content=cached.read_bytes(), media_type=media_type)
+        filename = _download_filename(item, media_type, raw_message)
+        return Response(
+            content=cached.read_bytes(),
+            media_type=media_type,
+            headers={"Content-Disposition": _content_disposition(filename)},
+        )
 
     # Check Cloudflare R2 (if enabled).
     r2_hit = get_media_from_r2(r2_key)
     if r2_hit is not None:
         content, media_type = r2_hit
+        filename = _download_filename(item, media_type, raw_message)
         try:
-            local_path = media_dir / f"{cache_base}{_extension_for(media_type)}"
+            local_path = media_dir / f"{cache_base}{_extension_for(media_type, filename)}"
             local_path.write_bytes(content)
         except Exception:
             pass
-        return Response(content=content, media_type=media_type)
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Content-Disposition": _content_disposition(filename)},
+        )
 
     # ── Fetch from Telegram and cache ────────────────────────────────────────
     try:
@@ -165,10 +244,11 @@ def inbox_media(item_id: int, db: Session = Depends(get_db)):
                     media_type = "image/jpeg"
                 elif item.item_type == "animation":
                     media_type = "image/gif"
+            filename = _download_filename(item, media_type, raw_message)
 
             # Persist to local cache.
             try:
-                cache_path = media_dir / f"{cache_base}{_extension_for(media_type)}"
+                cache_path = media_dir / f"{cache_base}{_extension_for(media_type, filename)}"
                 cache_path.write_bytes(media_response.content)
             except Exception:
                 pass  # Cache write failure is non-fatal
@@ -177,7 +257,11 @@ def inbox_media(item_id: int, db: Session = Depends(get_db)):
             if is_r2_enabled():
                 put_media_to_r2(r2_key, media_response.content, media_type)
 
-            return Response(content=media_response.content, media_type=media_type)
+            return Response(
+                content=media_response.content,
+                media_type=media_type,
+                headers={"Content-Disposition": _content_disposition(filename)},
+            )
     except HTTPException:
         raise
     except Exception as exc:

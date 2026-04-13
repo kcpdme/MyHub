@@ -19,6 +19,7 @@ import threading
 import time
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import httpx
 from sqlalchemy.orm import Session
@@ -27,6 +28,7 @@ from app import models
 from app.config import settings
 from app.database import SessionLocal
 from app.services.crypto_service import decrypt_text, encrypt_text
+from app.services.media_storage import is_r2_enabled, media_object_key, put_media_to_r2
 from app.services.summary_service import get_today_summary
 
 
@@ -301,6 +303,23 @@ def _store_inbox_item(db: Session, telegram_user_id: str, chat_id: str, message:
     db.add(item)
     db.commit()
     db.refresh(item)
+
+    # Keep text-only items downloadable by persisting a txt payload to storage.
+    if item.item_type == "text" and (item.text or "").strip():
+        text_bytes = item.text.encode("utf-8")
+        cache_base = (item.file_unique_id or "").strip() or (item.file_id or "").strip() or f"item_{item.id}"
+        cache_path = Path(settings.media_cache_dir) / f"{cache_base}.txt"
+
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_bytes(text_bytes)
+        except Exception:
+            pass
+
+        if is_r2_enabled():
+            r2_key = media_object_key(item.file_unique_id, item.file_id, item.id)
+            put_media_to_r2(r2_key, text_bytes, "text/plain; charset=utf-8")
+
     return item
 
 
