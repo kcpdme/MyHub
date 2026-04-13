@@ -263,7 +263,11 @@ def _extract_inbox_item(message: dict) -> tuple[str, str, str, str, str]:
     for media_type in ["document", "video", "audio", "voice", "animation", "sticker"]:
         media_obj = message.get(media_type)
         if media_obj:
-            content = caption or f"[{media_type}]"
+            if media_type == "document":
+                filename = str(media_obj.get("file_name", "") or "").strip()
+                content = caption or (f"[document] {filename}".strip() if filename else "[document]")
+            else:
+                content = caption or f"[{media_type}]"
             return (
                 media_type, content,
                 str(media_obj.get("file_id", "") or ""),
@@ -526,7 +530,6 @@ def _handle_message(
             items = (
                 db.query(models.TelegramInboxItem)
                 .filter(models.TelegramInboxItem.telegram_user_id == telegram_user_id)
-                .filter(models.TelegramInboxItem.is_archived.is_(False))
                 .order_by(models.TelegramInboxItem.created_at.desc())
                 .limit(8)
                 .all()

@@ -120,3 +120,26 @@ docker compose up -d --build
 
 Data persistence:
 - SQLite stored at `./data/automation_hub.db` via docker volume mapping.
+
+## Media Storage (Telegram Inbox Files)
+
+By default, inbox media/files are cached on local disk under `./media`.
+
+You can switch to Cloudflare R2 (recommended for durability):
+
+1. Set these values in `.env`:
+	- `MEDIA_STORAGE_BACKEND=r2`
+	- `MEDIA_R2_ACCOUNT_ID=<your_account_id>`
+	- `MEDIA_R2_BUCKET=<bucket_name>`
+	- `MEDIA_R2_ACCESS_KEY_ID=<access_key_id>`
+	- `MEDIA_R2_SECRET_ACCESS_KEY=<secret_key>`
+2. Rebuild/restart:
+
+```bash
+docker compose up -d --build
+```
+
+Behavior:
+- Reads local cache first for speed.
+- If not found locally, checks R2.
+- If not found in R2, downloads from Telegram, serves it, and stores to local cache + R2.

@@ -807,6 +807,7 @@ select {
   border-top: 1px solid var(--line-soft); background: var(--surface-2);
 }
 .inbox-card-actions button { flex: 1; }
+.inbox-card-actions .btn-icon { flex: 0 0 auto; min-width: 32px; }
 
 /* ═══════════════════════════════════
    EMPTY STATES

@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import json
 import math
+import mimetypes
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -34,6 +36,7 @@ from app.database import get_db
 from app.dependencies import require_api_key
 from app.services.api_keys import generate_api_key, hash_api_key
 from app.services.crypto_service import decrypt_text, encrypt_text
+from app.services.media_storage import get_media_from_r2, is_r2_enabled, media_object_key, put_media_to_r2
 from app.services.reminder_dispatcher import dispatch_reminder
 from app.services.summary_service import get_today_summary
 from app.services import webhook_dispatcher
@@ -73,23 +76,38 @@ def _audit(db: Session, entity_type: str, entity_id: int | None, action: str, ac
 
 @router.get("/inbox")
 def list_inbox(
-    include_archived: bool = False,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
-    q = db.query(models.TelegramInboxItem)
-    if not include_archived:
-        q = q.filter(models.TelegramInboxItem.is_archived.is_(False))
-    q = q.order_by(models.TelegramInboxItem.created_at.desc())
+    q = db.query(models.TelegramInboxItem).order_by(models.TelegramInboxItem.created_at.desc())
     items, total = _paginate(q, page, page_size)
     return _make_page([schemas.InboxItemOut.model_validate(i) for i in items], total, page, page_size)
 
 
 @router.get("/inbox/{item_id}/media")
 def inbox_media(item_id: int, db: Session = Depends(get_db)):
-    import mimetypes
-    from pathlib import Path
+    def _extension_for(content_type: str) -> str:
+        ext = mimetypes.guess_extension(content_type or "")
+        if ext in {".jpe", ".jpeg"}:
+            return ".jpg"
+        if ext:
+            return ext
+        if "jpeg" in content_type:
+            return ".jpg"
+        if "png" in content_type:
+            return ".png"
+        if "gif" in content_type:
+            return ".gif"
+        if "webp" in content_type:
+            return ".webp"
+        if "pdf" in content_type:
+            return ".pdf"
+        if "video" in content_type:
+            return ".mp4"
+        if "ogg" in content_type:
+            return ".ogg"
+        return ".bin"
 
     item = db.query(models.TelegramInboxItem).filter(models.TelegramInboxItem.id == item_id).first()
     if not item:
@@ -100,17 +118,28 @@ def inbox_media(item_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Telegram bot token is not configured")
 
     # ── Local media cache ────────────────────────────────────────────────────
-    # Media is stored in ./media/{file_unique_id}.{ext} so it survives
-    # Telegram link expiry and works offline after first download.
-    media_dir = Path("media")
+    # Cache path is configurable via MEDIA_CACHE_DIR.
+    media_dir = Path(settings.media_cache_dir)
     media_dir.mkdir(exist_ok=True)
+    cache_base = (item.file_unique_id or "").strip() or (item.file_id or "").strip() or f"item_{item.id}"
+    r2_key = media_object_key(item.file_unique_id, item.file_id, item.id)
 
-    # Check if already cached on disk.
-    if item.file_unique_id:
-        for cached in media_dir.glob(f"{item.file_unique_id}.*"):
-            media_type, _ = mimetypes.guess_type(str(cached))
-            media_type = media_type or "application/octet-stream"
-            return Response(content=cached.read_bytes(), media_type=media_type)
+    # Check if cached on local disk.
+    for cached in media_dir.glob(f"{cache_base}.*"):
+        media_type, _ = mimetypes.guess_type(str(cached))
+        media_type = media_type or "application/octet-stream"
+        return Response(content=cached.read_bytes(), media_type=media_type)
+
+    # Check Cloudflare R2 (if enabled).
+    r2_hit = get_media_from_r2(r2_key)
+    if r2_hit is not None:
+        content, media_type = r2_hit
+        try:
+            local_path = media_dir / f"{cache_base}{_extension_for(media_type)}"
+            local_path.write_bytes(content)
+        except Exception:
+            pass
+        return Response(content=content, media_type=media_type)
 
     # ── Fetch from Telegram and cache ────────────────────────────────────────
     try:
@@ -138,20 +167,15 @@ def inbox_media(item_id: int, db: Session = Depends(get_db)):
                     media_type = "image/gif"
 
             # Persist to local cache.
-            if item.file_unique_id:
-                ext = mimetypes.guess_extension(media_type) or (
-                    ".jpg" if "jpeg" in media_type else
-                    ".mp4" if "video" in media_type else
-                    ".ogg" if "ogg" in media_type else ".bin"
-                )
-                # mimetypes.guess_extension returns .jpe for jpeg on some systems
-                if ext in {".jpe", ".jpeg"}:
-                    ext = ".jpg"
-                cache_path = media_dir / f"{item.file_unique_id}{ext}"
-                try:
-                    cache_path.write_bytes(media_response.content)
-                except Exception:
-                    pass  # Cache write failure is non-fatal
+            try:
+                cache_path = media_dir / f"{cache_base}{_extension_for(media_type)}"
+                cache_path.write_bytes(media_response.content)
+            except Exception:
+                pass  # Cache write failure is non-fatal
+
+            # Persist to R2 for durable object storage.
+            if is_r2_enabled():
+                put_media_to_r2(r2_key, media_response.content, media_type)
 
             return Response(content=media_response.content, media_type=media_type)
     except HTTPException:
@@ -161,28 +185,17 @@ def inbox_media(item_id: int, db: Session = Depends(get_db)):
 
 
 
-@router.post("/inbox/{item_id}/archive")
-def archive_inbox_item(item_id: int, db: Session = Depends(get_db)):
+@router.delete("/inbox/{item_id}")
+def delete_inbox_item(item_id: int, db: Session = Depends(get_db)):
     item = db.query(models.TelegramInboxItem).filter(models.TelegramInboxItem.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Inbox item not found")
-    item.is_archived = True
-    db.add(item)
-    _audit(db, "inbox", item_id, "archived")
+
+    db.delete(item)
+    _audit(db, "inbox", item_id, "deleted")
     db.commit()
-    webhook_dispatcher.fire_event("inbox.archived", {"id": item_id})
+    webhook_dispatcher.fire_event("inbox.deleted", {"id": item_id})
     return {"ok": True}
-
-
-@router.post("/inbox/archive-all")
-def archive_all_inbox_items(db: Session = Depends(get_db)):
-    count = (
-        db.query(models.TelegramInboxItem)
-        .filter(models.TelegramInboxItem.is_archived.is_(False))
-        .update({"is_archived": True})
-    )
-    db.commit()
-    return {"ok": True, "archived": count}
 
 
 @router.post("/inbox/{item_id}/analyze")
@@ -228,9 +241,8 @@ def promote_inbox_to_capture(item_id: int, db: Session = Depends(get_db)):
         content = f"[{item.item_type}] Telegram media item #{item.message_id}"
 
     capture = models.Capture(content=content, url="")
-    item.is_archived = True
     db.add(capture)
-    db.add(item)
+    db.delete(item)
     _audit(db, "inbox", item_id, "promoted_to_capture")
     db.commit()
     db.refresh(capture)
@@ -255,9 +267,8 @@ def promote_inbox_to_task(
     title = item.text.strip() or f"Review Telegram {item.item_type} item #{item.message_id}"
     now = datetime.utcnow()
     task = models.Task(title=title[:255], description="", status="todo", priority=priority, updated_at=now)
-    item.is_archived = True
     db.add(task)
-    db.add(item)
+    db.delete(item)
     _audit(db, "inbox", item_id, "promoted_to_task")
     db.commit()
     db.refresh(task)
@@ -277,9 +288,8 @@ def promote_inbox_to_note(item_id: int, db: Session = Depends(get_db)):
 
     now = datetime.utcnow()
     note = models.EncryptedNote(title="", cipher_text=encrypt_text(content), created_at=now, updated_at=now)
-    item.is_archived = True
     db.add(note)
-    db.add(item)
+    db.delete(item)
     _audit(db, "inbox", item_id, "promoted_to_note")
     db.commit()
     db.refresh(note)

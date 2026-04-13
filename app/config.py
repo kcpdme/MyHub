@@ -48,6 +48,18 @@ class Settings(BaseSettings):
 
     notes_encryption_key: str = ""
 
+    # Media storage backend for Telegram inbox files.
+    # Supported values: local, r2
+    media_storage_backend: str = "local"
+    media_cache_dir: str = "media"
+
+    # Cloudflare R2 (S3-compatible) settings.
+    media_r2_account_id: str = ""
+    media_r2_bucket: str = ""
+    media_r2_access_key_id: str = ""
+    media_r2_secret_access_key: str = ""
+    media_r2_public_base_url: str = ""
+
     # E-mail channel (optional). Fill to enable reminders via email.
     smtp_host: str = ""
     smtp_port: int = 587

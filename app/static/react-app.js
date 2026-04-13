@@ -700,18 +700,13 @@ function App() {
   }
 
   /* ─── Inbox Actions ─── */
-  async function archiveInbox(id) {
-    try { await api(`/api/inbox/${id}/archive`, { method: "POST" }); await refreshAll(); setAppStatus("Archived.", "success"); }
-    catch (err) { setAppStatus(`Archive failed: ${err.message}`, "error"); }
-  }
-
-  async function archiveAllInbox() {
-    confirmAction(`Archive all ${inboxItems.length} inbox items?`, async () => {
+  async function deleteInbox(id) {
+    confirmAction("Delete this inbox item permanently?", async () => {
       try {
-        const resp = await api("/api/inbox/archive-all", { method: "POST" });
+        await api(`/api/inbox/${id}`, { method: "DELETE" });
         await refreshAll();
-        setAppStatus(`Archived ${resp.archived} items.`, "success");
-      } catch (err) { setAppStatus(`Archive failed: ${err.message}`, "error"); }
+        setAppStatus("Inbox item deleted.", "success");
+      } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
     });
   }
 
@@ -739,6 +734,14 @@ function App() {
 
   function itemCanPreview(item) {
     return Boolean(item?.file_id && ["photo", "sticker", "animation"].includes(item.item_type));
+  }
+
+  function itemHasFile(item) {
+    return Boolean(item?.file_id);
+  }
+
+  function openInboxFile(id) {
+    window.open(`/api/inbox/${id}/media`, "_blank", "noopener,noreferrer");
   }
 
   /* ─── Habits ─── */
@@ -1167,11 +1170,7 @@ function App() {
                     <h2><${Icon} name="inbox" /> Telegram Inbox</h2>
                     <p className="muted">Anything shared to your Telegram bot lands here automatically.</p>
                   </div>
-                  ${inboxItems.length > 1 ? html`
-                    <button className="ghost sm" onClick=${archiveAllInbox}>
-                      <${Icon} name="archive-x" size=${14} /> Archive All (${inboxItems.length})
-                    </button>
-                  ` : ""}
+                  ${inboxItems.length > 0 ? html`<span className="muted">${inboxItems.length} item${inboxItems.length !== 1 ? "s" : ""}</span>` : ""}
                 </div>
               </div>
               ${busy && filteredInbox.length === 0 ? html`
@@ -1213,8 +1212,13 @@ function App() {
                         <button className="ghost sm" onClick=${() => inboxToTask(item.id)}>
                           <${Icon} name="check-square" size=${12} /> Task
                         </button>
-                        <button className="ghost sm" onClick=${() => archiveInbox(item.id)}>
-                          <${Icon} name="archive" size=${12} /> Archive
+                        ${itemHasFile(item) ? html`
+                          <button className="ghost sm" onClick=${() => openInboxFile(item.id)}>
+                            <${Icon} name="download" size=${12} /> File
+                          </button>
+                        ` : ""}
+                        <button className="btn-icon danger-ghost sm" onClick=${() => deleteInbox(item.id)} title="Delete permanently" aria-label="Delete permanently">
+                          <${Icon} name="trash" size=${12} />
                         </button>
                       </div>
                     </div>
