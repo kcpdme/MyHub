@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     app_api_key: str = "change-me"
+    app_version: str = "2.0.0"
 
     database_url: str = "sqlite:///./automation_hub.db"
     scheduler_poll_seconds: int = 30
@@ -20,7 +21,26 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
     telegram_bot_polling_enabled: bool = True
     telegram_bot_poll_timeout_seconds: int = 20
+    # If set, the bot registers a webhook instead of using long-polling.
+    # Must be a publicly reachable HTTPS URL, e.g. https://yourdomain.com/telegram/webhook
+    telegram_webhook_url: str = ""
+    # Random secret token used to validate incoming webhook requests from Telegram.
+    # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+    telegram_webhook_secret: str = ""
+
     notes_encryption_key: str = ""
+
+    # E-mail channel (optional). Fill to enable reminders via email.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_pass: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
+
+    # Rate limiting
+    rate_limit_enabled: bool = True
+    rate_limit_default: str = "200/minute"
 
 
 settings = Settings()

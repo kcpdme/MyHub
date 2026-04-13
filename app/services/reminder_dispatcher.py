@@ -4,14 +4,21 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.services.channels.telegram_sender import send_telegram
+from app.services.channels.email_sender import send_email
+from app.services import webhook_dispatcher
 
 
 def send_channel_message(channel: str, target: str, message: str) -> tuple[bool, str]:
+    """Route a message to the appropriate delivery channel."""
     normalized = channel.lower().strip()
 
     if normalized == "telegram":
         return send_telegram(target, message)
-    return False, f"Unsupported channel: {channel}"
+
+    if normalized == "email":
+        return send_email(target, message)
+
+    return False, f"Unsupported channel: {channel!r}. Valid channels: telegram, email"
 
 
 def dispatch_reminder(db: Session, reminder: models.Reminder) -> tuple[bool, str]:
@@ -34,6 +41,15 @@ def dispatch_reminder(db: Session, reminder: models.Reminder) -> tuple[bool, str
             reminder.status = "sent"
         reminder.last_error = ""
         reminder.sent_at = datetime.utcnow()
+
+        # Fire outbound webhook so external systems know a reminder was sent.
+        webhook_dispatcher.fire_event("reminder.sent", {
+            "id": reminder.id,
+            "message": reminder.message,
+            "channel": reminder.channel,
+            "target": reminder.target,
+            "sent_at": reminder.sent_at.isoformat(),
+        })
     else:
         reminder.status = "failed"
         reminder.last_error = detail

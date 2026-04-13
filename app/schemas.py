@@ -1,7 +1,29 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import Generic, List, TypeVar
 
 from pydantic import BaseModel, Field
 
+T = TypeVar("T")
+
+
+# ─────────────────────────────────────────────
+# Paginated response wrapper
+# ─────────────────────────────────────────────
+
+class Page(BaseModel, Generic[T]):
+    """Standard paginated list response used by all list endpoints."""
+    items: List[T]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+# ─────────────────────────────────────────────
+# Captures
+# ─────────────────────────────────────────────
 
 class CaptureCreate(BaseModel):
     content: str = Field(min_length=1)
@@ -21,6 +43,10 @@ class CaptureOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
+# ─────────────────────────────────────────────
+# Tasks
+# ─────────────────────────────────────────────
 
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1)
@@ -46,9 +72,15 @@ class TaskOut(BaseModel):
     priority: str
     due_date: datetime | None
     created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
+
+# ─────────────────────────────────────────────
+# Reminders
+# ─────────────────────────────────────────────
 
 class ReminderCreate(BaseModel):
     message: str = Field(min_length=1)
@@ -75,6 +107,10 @@ class ReminderOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ─────────────────────────────────────────────
+# Summary
+# ─────────────────────────────────────────────
+
 class SummaryOut(BaseModel):
     captures_today: int
     tasks_open: int
@@ -83,6 +119,10 @@ class SummaryOut(BaseModel):
     notes_total: int = 0
     tasks_done_today: int = 0
 
+
+# ─────────────────────────────────────────────
+# API Keys
+# ─────────────────────────────────────────────
 
 class ApiKeyCreate(BaseModel):
     name: str = "generated"
@@ -105,6 +145,10 @@ class ApiKeyOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ─────────────────────────────────────────────
+# Notes
+# ─────────────────────────────────────────────
+
 class NoteCreate(BaseModel):
     title: str = ""
     content: str = Field(min_length=1)
@@ -122,6 +166,28 @@ class NoteOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+
+# ─────────────────────────────────────────────
+# Tags
+# ─────────────────────────────────────────────
+
+class TagCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    color: str = "#6366f1"
+
+
+class TagOut(BaseModel):
+    id: int
+    name: str
+    color: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ─────────────────────────────────────────────
+# Telegram
+# ─────────────────────────────────────────────
 
 class TelegramUserCreate(BaseModel):
     telegram_user_id: str = Field(min_length=1)
@@ -159,6 +225,10 @@ class InboxPromoteTaskCreate(BaseModel):
     priority: str = "medium"
 
 
+# ─────────────────────────────────────────────
+# Habits
+# ─────────────────────────────────────────────
+
 class HabitCreate(BaseModel):
     name: str = Field(min_length=1)
     icon: str = "check"
@@ -188,3 +258,64 @@ class HabitLogOut(BaseModel):
 
 class HabitToggle(BaseModel):
     date: str | None = None
+
+
+# ─────────────────────────────────────────────
+# Audit log
+# ─────────────────────────────────────────────
+
+class AuditLogOut(BaseModel):
+    id: int
+    entity_type: str
+    entity_id: int | None
+    action: str
+    actor: str
+    detail_json: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ─────────────────────────────────────────────
+# Outbound webhooks
+# ─────────────────────────────────────────────
+
+class WebhookSubscriptionCreate(BaseModel):
+    url: str = Field(min_length=1)
+    event_types: str = "*"
+    secret: str = ""
+
+
+class WebhookSubscriptionOut(BaseModel):
+    id: int
+    url: str
+    event_types: str
+    is_active: bool
+    created_at: datetime
+    last_fired_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class WebhookDeliveryLogOut(BaseModel):
+    id: int
+    subscription_id: int
+    event_type: str
+    response_status: int | None
+    success: bool
+    error_message: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ─────────────────────────────────────────────
+# Search
+# ─────────────────────────────────────────────
+
+class SearchResult(BaseModel):
+    entity_type: str   # "capture", "task", "note", "inbox"
+    entity_id: int
+    title: str
+    snippet: str
+    created_at: datetime

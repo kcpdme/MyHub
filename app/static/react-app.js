@@ -394,6 +394,9 @@ function App() {
   async function api(path, options = {}) {
     const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
     if (apiKey.trim()) headers["X-API-Key"] = apiKey.trim();
+    // Include CSRF token for session-authenticated browser requests.
+    const csrfToken = document.cookie.split('; ').find(r => r.startsWith('csrf_token='))?.split('=')[1];
+    if (csrfToken && !apiKey.trim()) headers["X-CSRF-Token"] = csrfToken;
     const response = await fetch(path, { ...options, headers });
     const text = await response.text();
     let data = null;
@@ -409,22 +412,36 @@ function App() {
     return data;
   }
 
+  /* ─── Unwrap paginated response ─── */
+  function unwrap(resp) {
+    if (!resp) return [];
+    // Paginated responses have an .items array; flat arrays returned as-is.
+    if (Array.isArray(resp)) return resp;
+    if (Array.isArray(resp.items)) return resp.items;
+    return [];
+  }
+
   /* ─── Data Refresh ─── */
   async function refreshAll() {
     try {
       setBusy(true);
+      // Fetch all pages up to 200 items per list for local filtering.
       const [cap, tsk, nts, rem, ibx, sum, hab] = await Promise.all([
-        api("/api/captures"), api("/api/tasks"), api("/api/notes"),
-        api("/api/reminders"), api("/api/inbox"), api("/api/summary/today"),
+        api("/api/captures?page_size=200"),
+        api("/api/tasks?page_size=200"),
+        api("/api/notes?page_size=200"),
+        api("/api/reminders?page_size=200"),
+        api("/api/inbox?page_size=200"),
+        api("/api/summary/today"),
         api("/api/habits"),
       ]);
-      setCaptures(cap || []);
-      setTasks(tsk || []);
-      setNotes(nts || []);
-      setReminders(rem || []);
-      setInboxItems(ibx || []);
+      setCaptures(unwrap(cap));
+      setTasks(unwrap(tsk));
+      setNotes(unwrap(nts));
+      setReminders(unwrap(rem));
+      setInboxItems(unwrap(ibx));
       setSummary(sum || null);
-      setHabits(hab || []);
+      setHabits(Array.isArray(hab) ? hab : unwrap(hab));
     } catch (err) {
       setAppStatus(`Load failed: ${err.message}`, "error");
     } finally {
