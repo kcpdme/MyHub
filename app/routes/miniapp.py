@@ -112,6 +112,7 @@ def miniapp_shell(request: Request):
         context={
             "title": "AutoHub Mini App",
             "miniapp_url": settings.miniapp_url or str(request.base_url).rstrip("/"),
+            "app_timezone": settings.app_timezone,
         },
     )
 

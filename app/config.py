@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     app_port: int = 8000
     app_api_key: str = "change-me"
     app_version: str = "2.0.0"
+    app_timezone: str = "Asia/Kolkata"
 
     database_url: str = _DEFAULT_DB
     scheduler_poll_seconds: int = 30

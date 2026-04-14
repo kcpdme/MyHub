@@ -154,6 +154,7 @@ def home(request: Request, response: Response):
         context={
             "title": "Personal Automation Hub",
             "default_telegram_target": settings.telegram_chat_id,
+            "app_timezone": settings.app_timezone,
         },
     )
     _set_csrf_cookie(resp, csrf_token)

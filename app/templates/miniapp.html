@@ -13,7 +13,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/static/style.css?v=20260414b" />
+    <link rel="stylesheet" href="/static/style.css?v=20260414c" />
 
     <style>
       :root {
@@ -213,7 +213,7 @@
     </div>
 
     <!-- App Root (React mounts here) -->
-    <div id="root" data-default-telegram-target="" data-miniapp-mode="true"></div>
+    <div id="root" data-default-telegram-target="" data-miniapp-mode="true" data-app-timezone="{{ app_timezone }}"></div>
 
     <script type="module">
       const tg = window.Telegram?.WebApp;
@@ -294,7 +294,7 @@
 
           // Dynamically import the React app.
           // The React app detects miniapp mode via appRoot.dataset.miniappMode.
-          await import('/static/react-app.js?v=20260414c');
+          await import('/static/react-app.js?v=20260414e');
 
           // Small delay so React can mount.
           await new Promise(r => setTimeout(r, 300));

@@ -4,7 +4,7 @@ import htm from "https://esm.sh/htm@3.1.1";
 
 const html = htm.bind(React.createElement);
 const rootEl = document.getElementById("root");
-const defaultTarget = rootEl?.dataset?.defaultTelegramTarget || "";
+const appTimezone = rootEl?.dataset?.appTimezone || "Asia/Kolkata";
 const keyStorage = "automation_hub_api_key";
 
 // ─── Mini App mode detection ───────────────────────────────────────────────
@@ -70,23 +70,66 @@ function Icon({ name, size = 18 }) {
 }
 
 /* ─── Helpers ─── */
+const HAS_TZ_SUFFIX = /([zZ]|[+-]\d{2}:\d{2})$/;
+
+function parseApiDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value !== "string") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const normalized = HAS_TZ_SUFFIX.test(value) ? value : `${value}Z`;
+  const d = new Date(normalized);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function toDateInputValue(value) {
+  const d = parseApiDate(value);
+  if (!d) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function toTimeInputValue(value) {
+  const d = parseApiDate(value);
+  if (!d) return "";
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+function combineLocalDateTimeToUtcIso(datePart, timePart) {
+  if (!datePart) return null;
+  const t = timePart || "09:00";
+  const localValue = `${datePart}T${t}`;
+  const dateObj = new Date(localValue);
+  if (Number.isNaN(dateObj.getTime())) return null;
+  return dateObj.toISOString();
+}
+
 function formatDate(value) {
-  if (!value) return "—";
-  return new Date(value).toLocaleString(undefined, {
+  const d = parseApiDate(value);
+  if (!d) return "—";
+  return d.toLocaleString(undefined, {
     month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
   });
 }
 
 function formatDateShort(value) {
-  if (!value) return "—";
-  return new Date(value).toLocaleDateString(undefined, {
+  const d = parseApiDate(value);
+  if (!d) return "—";
+  return d.toLocaleDateString(undefined, {
     month: "short", day: "numeric",
   });
 }
 
 function relativeTime(value) {
-  if (!value) return "";
-  const diff = new Date(value) - Date.now();
+  const d = parseApiDate(value);
+  if (!d) return "";
+  const diff = d.getTime() - Date.now();
   const absDiff = Math.abs(diff);
   const mins = Math.floor(absDiff / 60000);
   const hours = Math.floor(mins / 60);
@@ -99,17 +142,6 @@ function relativeTime(value) {
   if (mins < 60) return `${mins}m ago`;
   if (hours < 24) return `${hours}h ago`;
   return `${days}d ago`;
-}
-
-function toIsoLocalDateTime(minutesFromNow = 15) {
-  const next = new Date(Date.now() + minutesFromNow * 60000);
-  next.setSeconds(0, 0);
-  const yyyy = next.getFullYear();
-  const mm = String(next.getMonth() + 1).padStart(2, "0");
-  const dd = String(next.getDate()).padStart(2, "0");
-  const hh = String(next.getHours()).padStart(2, "0");
-  const mi = String(next.getMinutes()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
 }
 
 async function copyToClipboard(text) {
@@ -377,7 +409,6 @@ function App() {
   const [inboxView, setInboxView] = useState(localStorage.getItem("hub_inbox_view") || "list");
   const [darkMode, setDarkMode] = useState(isMiniApp ? true : localStorage.getItem("hub_dark_mode") === "true");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [taskSubTab, setTaskSubTab] = useState("tasks"); // "tasks" | "reminders"
   // Mini App mode: read API key from sessionStorage (set by miniapp.html auth handshake).
   const [apiKey, setApiKey] = useState(
     isMiniApp
@@ -401,16 +432,8 @@ function App() {
   const [habits, setHabits] = useState([]);
 
   const [captureForm, setCaptureForm] = useState({ content: "", url: "" });
-  const [taskForm, setTaskForm] = useState({ title: "", priority: "medium", dueDate: "" });
+  const [taskForm, setTaskForm] = useState({ title: "", dueDate: "", dueTime: "09:00" });
   const [noteForm, setNoteForm] = useState({ title: "", content: "" });
-  const [taskFilter, setTaskFilter] = useState("all");
-  const [reminderForm, setReminderForm] = useState({
-    message: "",
-    target: defaultTarget,
-    remindAt: toIsoLocalDateTime(15),
-    recurring: false,
-    recurrenceMinutes: "",
-  });
   const [habitForm, setHabitForm] = useState({ name: "" });
 
   /* ─── Confirm / Edit Dialog State ─── */
@@ -542,7 +565,7 @@ function App() {
       if (e.key === "/") { e.preventDefault(); searchRef.current?.focus(); return; }
       if (e.key === "r" && !e.ctrlKey && !e.metaKey) { refreshAll(); return; }
       if (e.key === "d" && !e.ctrlKey && !e.metaKey) { setDarkMode(v => !v); return; }
-      const navKeys = { "1": "summary", "2": "captures", "3": "inbox", "4": "tasks", "5": "notes", "6": "reminders", "7": "habits", "8": "pomodoro", "9": "settings" };
+      const navKeys = { "1": "summary", "2": "captures", "3": "inbox", "4": "tasks", "5": "notes", "6": "habits", "7": "pomodoro", "8": "settings" };
       if (navKeys[e.key]) { openSection(navKeys[e.key]); return; }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -600,34 +623,24 @@ function App() {
   async function submitTask(e) {
     e.preventDefault();
     try {
-      const dueDate = taskForm.dueDate ? `${taskForm.dueDate}T23:59:59` : null;
+      const dueDate = combineLocalDateTimeToUtcIso(taskForm.dueDate, taskForm.dueTime);
       await api("/api/tasks", {
         method: "POST",
-        body: JSON.stringify({ title: taskForm.title, priority: taskForm.priority, due_date: dueDate }),
+        body: JSON.stringify({ title: taskForm.title, priority: "medium", due_date: dueDate }),
       });
-      setTaskForm({ title: "", priority: "medium", dueDate: "" });
+
+      setTaskForm({ title: "", dueDate: "", dueTime: "09:00" });
       await refreshAll();
-      setAppStatus("Task created.", "success");
+      setAppStatus(dueDate ? "Task created with due reminder." : "Task created.", "success");
     } catch (err) { setAppStatus(`Task failed: ${err.message}`, "error"); }
   }
 
   async function toggleTask(item) {
     try {
-      const nextStatus = item.status === "done" ? "todo" : item.status === "todo" ? "in_progress" : "done";
+      const nextStatus = item.status === "done" ? "todo" : "done";
       await api(`/api/tasks/${item.id}`, {
         method: "PATCH",
         body: JSON.stringify({ status: nextStatus }),
-      });
-      await refreshAll();
-      setAppStatus("Task updated.", "success");
-    } catch (err) { setAppStatus(`Update failed: ${err.message}`, "error"); }
-  }
-
-  async function setTaskStatus(item, status) {
-    try {
-      await api(`/api/tasks/${item.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
       });
       await refreshAll();
       setAppStatus("Task updated.", "success");
@@ -645,18 +658,27 @@ function App() {
   }
 
   function editTask(t) {
+    const dueDatePart = toDateInputValue(t.due_date);
+    const dueTimePart = toTimeInputValue(t.due_date);
+    const dueValue = dueDatePart && dueTimePart ? `${dueDatePart}T${dueTimePart}` : "";
+
     setEditDialog({
       title: "Edit Task",
       fields: [
         { key: "title", label: "Title", type: "text", placeholder: "Task title" },
-        { key: "priority", label: "Priority", type: "select", options: [
-          { value: "low", label: "Low" }, { value: "medium", label: "Medium" }, { value: "high", label: "High" }
-        ]},
+        { key: "due_date", label: "Reminder Time", type: "datetime-local", placeholder: "Optional reminder date and time" },
       ],
-      values: { title: t.title, priority: t.priority },
+      values: { title: t.title, due_date: dueValue },
       onSave: async (vals) => {
         try {
-          await api(`/api/tasks/${t.id}`, { method: "PATCH", body: JSON.stringify(vals) });
+          await api(`/api/tasks/${t.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              title: vals.title,
+              due_date: vals.due_date ? new Date(vals.due_date).toISOString() : null,
+              clear_due_date: !vals.due_date,
+            }),
+          });
           setEditDialog(null);
           await refreshAll();
           setAppStatus("Task updated.", "success");
@@ -702,41 +724,6 @@ function App() {
           setAppStatus("Note updated.", "success");
         } catch (err) { setAppStatus(`Update failed: ${err.message}`, "error"); }
       },
-    });
-  }
-
-  /* ─── CRUD: Reminders ─── */
-  async function submitReminder(e) {
-    e.preventDefault();
-    try {
-      const payload = {
-        message: reminderForm.message, channel: "telegram", target: reminderForm.target,
-        remind_at: new Date(reminderForm.remindAt).toISOString(),
-        is_recurring: reminderForm.recurring,
-        recurrence_minutes: reminderForm.recurring && reminderForm.recurrenceMinutes ? Number(reminderForm.recurrenceMinutes) : null,
-      };
-      await api("/api/reminders", { method: "POST", body: JSON.stringify(payload) });
-      setReminderForm({ message: "", target: defaultTarget, remindAt: toIsoLocalDateTime(15), recurring: false, recurrenceMinutes: "" });
-      await refreshAll();
-      setAppStatus("Reminder scheduled.", "success");
-    } catch (err) { setAppStatus(`Reminder failed: ${err.message}`, "error"); }
-  }
-
-  async function sendNow(id) {
-    try {
-      await api(`/api/reminders/${id}/send-now`, { method: "POST" });
-      await refreshAll();
-      setAppStatus("Reminder sent.", "success");
-    } catch (err) { setAppStatus(`Send failed: ${err.message}`, "error"); }
-  }
-
-  async function deleteReminder(id) {
-    confirmAction("Delete this reminder permanently?", async () => {
-      try {
-        await api(`/api/reminders/${id}`, { method: "DELETE" });
-        await refreshAll();
-        setAppStatus("Reminder deleted.", "success");
-      } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
     });
   }
 
@@ -986,13 +973,13 @@ function App() {
 
   /* ─── Filtering ─── */
   const filteredTasks = useMemo(() => {
-    let items = taskFilter === "all" ? tasks : tasks.filter((t) => t.status === taskFilter);
+    let items = tasks;
     if (searchQuery && section === "tasks") {
       const q = searchQuery.toLowerCase();
       items = items.filter((t) => t.title.toLowerCase().includes(q));
     }
     return items;
-  }, [tasks, taskFilter, searchQuery, section]);
+  }, [tasks, searchQuery, section]);
 
   const filteredCaptures = useMemo(() => {
     if (!searchQuery || section !== "captures") return captures;
@@ -1020,7 +1007,7 @@ function App() {
 
   /* ─── Computed stats ─── */
   const tasksDone = tasks.filter(t => t.status === "done").length;
-  const tasksInProgress = tasks.filter(t => t.status === "in_progress").length;
+  const tasksPending = tasks.filter(t => t.status !== "done").length;
   const tasksTotal = tasks.length;
   const remindersSent = reminders.filter(r => r.status === "sent").length;
   const remindersTotal = reminders.length;
@@ -1259,7 +1246,7 @@ function App() {
               </div>
               <div className="progress-grid">
                 <${ProgressBar} value=${tasksDone} max=${tasksTotal} label="Tasks Completed" color="var(--green-500)" />
-                <${ProgressBar} value=${tasksInProgress} max=${tasksTotal} label="Tasks In Progress" color="var(--amber-600)" />
+                <${ProgressBar} value=${tasksPending} max=${tasksTotal} label="Tasks Pending" color="var(--amber-600)" />
                 <${ProgressBar} value=${remindersSent} max=${remindersTotal} label="Reminders Delivered" color="var(--blue-600)" />
                 <${ProgressBar} value=${habitsCompletedToday} max=${habits.length || 1} label="Habits Done Today" color="var(--teal-600)" />
               </div>
@@ -1428,159 +1415,115 @@ function App() {
             </section>
           `}
 
-          <!-- ═══ TASKS + REMINDERS SECTION ═══ -->
+          <!-- ═══ TASKS SECTION ═══ -->
           ${section === "tasks" && html`
             <section className="panel section-panel" id="section-tasks">
               <div className="section-head">
-                <h2><${Icon} name="check-square" /> Tasks & Reminders</h2>
-                <p className="muted">Track work and schedule Telegram reminders — all in one place.</p>
+                <h2><${Icon} name="check-square" /> Tasks</h2>
+                <p className="muted">A simple task list with optional due date and reminder time.</p>
               </div>
 
-              <!-- Sub-tab switcher -->
-              <div className="sub-tab-bar">
-                <button
-                  className=${`sub-tab ${taskSubTab === "tasks" ? "active" : ""}`}
-                  onClick=${() => setTaskSubTab("tasks")}
-                >
-                  <${Icon} name="check-square" size=${13} /> Tasks
-                  ${tasks.filter(t => t.status !== "done").length > 0 ? ` (${tasks.filter(t => t.status !== "done").length} open)` : ""}
-                </button>
-                <button
-                  className=${`sub-tab ${taskSubTab === "reminders" ? "active" : ""}`}
-                  onClick=${() => setTaskSubTab("reminders")}
-                >
-                  <${Icon} name="bell" size=${13} /> Reminders
-                  ${reminders.filter(r => r.status === "pending").length > 0 ? ` (${reminders.filter(r => r.status === "pending").length} pending)` : ""}
-                </button>
-              </div>
-
-              <!-- TASKS TAB -->
-              ${taskSubTab === "tasks" && html`
-                <form onSubmit=${submitTask} className="stack">
-                  <input required value=${taskForm.title} onInput=${(e) => setTaskForm({ ...taskForm, title: e.target.value })} placeholder="What needs to be done?" />
-                  <div className="row row-2">
-                    <select value=${taskForm.priority} onChange=${(e) => setTaskForm({ ...taskForm, priority: e.target.value })}>
-                      <option value="low">Low Priority</option>
-                      <option value="medium">Medium Priority</option>
-                      <option value="high">High Priority</option>
-                    </select>
-                    <input type="date" value=${taskForm.dueDate} onInput=${(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} />
+              <form onSubmit=${submitTask} className="stack">
+                <input required value=${taskForm.title} onInput=${(e) => setTaskForm({ ...taskForm, title: e.target.value })} placeholder="What needs to be done?" />
+                <div className="task-date-time-wrap">
+                  <label className="field-label" style=${{ marginBottom: "0.35rem" }}>Due Date & Time (Optional Reminder)</label>
+                  <div className="task-datetime-row">
+                    <input
+                      type="date"
+                      value=${taskForm.dueDate}
+                      onInput=${(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })}
+                      className="task-datetime-input"
+                    />
+                    <input
+                      type="time"
+                      step="300"
+                      value=${taskForm.dueTime}
+                      onInput=${(e) => setTaskForm({ ...taskForm, dueTime: e.target.value })}
+                      className="task-datetime-input"
+                    />
                   </div>
-                  <button disabled=${busy}><${Icon} name="plus" size=${16} /> Add Task</button>
-                </form>
-
-                <div className="filter-row" style=${{ marginTop: "1rem" }}>
-                  ${["all", "todo", "in_progress", "done"].map(f => html`
-                    <button key=${f} className=${`ghost sm ${taskFilter === f ? "active" : ""}`} onClick=${() => setTaskFilter(f)}>
-                      ${f === "all" ? "All" : f === "todo" ? "To Do" : f === "in_progress" ? "In Progress" : "Done"} ${f !== "all" ? `(${tasks.filter(t => t.status === f).length})` : `(${tasks.length})`}
-                    </button>
-                  `)}
+                  <div className="muted" style=${{ marginTop: "0.32rem", fontSize: "0.78rem" }}>
+                    Timezone: ${appTimezone} (GMT+5:30)
+                  </div>
                 </div>
+                <div className="flex-row task-preset-row">
+                  ${[
+                    { label: "+30m", mins: 30 },
+                    { label: "+1h", mins: 60 },
+                    { label: "+2h", mins: 120 },
+                    { label: "Today 6pm", mins: null },
+                    { label: "Tomorrow 9am", mins: -1 },
+                  ].map((p) => html`
+                    <button key=${p.label} className="ghost sm" onClick=${(e) => {
+                      e.preventDefault();
+                      if (p.mins && p.mins > 0) {
+                        const target = new Date(Date.now() + p.mins * 60000);
+                        setTaskForm({
+                          ...taskForm,
+                          dueDate: toDateInputValue(target),
+                          dueTime: toTimeInputValue(target),
+                        });
+                        return;
+                      }
+                      const t = new Date();
+                      if (p.mins === null) {
+                        t.setHours(18, 0, 0, 0);
+                      } else {
+                        t.setDate(t.getDate() + 1);
+                        t.setHours(9, 0, 0, 0);
+                      }
+                      setTaskForm({
+                        ...taskForm,
+                        dueDate: toDateInputValue(t),
+                        dueTime: toTimeInputValue(t),
+                      });
+                    }}><${Icon} name="clock" size=${12} /> ${p.label}</button>
+                  `)}
+                  <button className="ghost sm" onClick=${(e) => {
+                    e.preventDefault();
+                    setTaskForm({ ...taskForm, dueDate: "", dueTime: "09:00" });
+                  }}>
+                    <${Icon} name="x" size=${12} /> Clear
+                  </button>
+                </div>
+                <button disabled=${busy}><${Icon} name="plus" size=${16} /> Add Task</button>
+              </form>
 
-                ${tasksTotal > 0 ? html`
-                  <div style=${{ margin: "0.75rem 0 0.25rem" }}>
-                    <${ProgressBar} value=${tasksDone} max=${tasksTotal} label="Completion" color="var(--green-500)" />
-                  </div>
-                ` : ""}
+              ${tasksTotal > 0 ? html`
+                <div style=${{ margin: "0.85rem 0 0.25rem" }}>
+                  <${ProgressBar} value=${tasksDone} max=${tasksTotal} label="Completed" color="var(--green-500)" />
+                </div>
+              ` : ""}
 
-                <div style=${{ marginTop: "0.5rem" }}>
-                  ${filteredTasks.length > 0 ? html`
-                    <div className="list">
-                      ${filteredTasks.map(t => html`
-                        <div className="list-item" key=${t.id}>
-                          <button
-                            className=${`btn-icon ${t.status === "done" ? "success-ghost" : "ghost"}`}
-                            onClick=${() => toggleTask(t)}
-                            title=${t.status === "done" ? "Mark as Todo" : t.status === "todo" ? "Start Working" : "Mark as Done"}
-                            style=${{ flexShrink: 0 }}
-                          >
-                            <${Icon} name=${t.status === "done" ? "check" : t.status === "in_progress" ? "loader" : "check-square"} size=${16} />
-                          </button>
-                          <div className="list-item-content">
-                            <div className=${`list-item-title ${t.status === "done" ? "done" : ""}`}>${t.title}</div>
-                            <div className="list-item-meta">
-                              <span className=${`priority-badge ${t.priority}`}>${t.priority}</span>
-                              <span className=${`status-badge ${t.status}`}>${t.status === "in_progress" ? "in progress" : t.status}</span>
-                              ${t.due_date ? html`<span><${Icon} name="clock" size=${12} /> ${formatDateShort(t.due_date)}</span>` : ""}
-                            </div>
-                            ${t.status !== "done" ? html`
-                              <div className="task-quick-status" style=${{ marginTop: "0.35rem" }}>
-                                ${t.status !== "todo" ? html`<button className="ghost sm" onClick=${() => setTaskStatus(t, "todo")}><${Icon} name="undo" size=${11} /> To Do</button>` : ""}
-                                ${t.status !== "in_progress" ? html`<button className="ghost sm" onClick=${() => setTaskStatus(t, "in_progress")}><${Icon} name="loader" size=${11} /> In Progress</button>` : ""}
-                                ${t.status !== "done" ? html`<button className="success-ghost sm" onClick=${() => setTaskStatus(t, "done")}><${Icon} name="check" size=${11} /> Done</button>` : ""}
-                              </div>
-                            ` : ""}
-                          </div>
-                          <div className="list-item-actions">
-                            <button className="btn-icon ghost sm" onClick=${() => editTask(t)} title="Edit"><${Icon} name="edit" size=${14} /></button>
-                            <button className="btn-icon danger-ghost sm" onClick=${() => deleteTask(t.id)} title="Delete"><${Icon} name="trash" size=${14} /></button>
+              <div style=${{ marginTop: "0.5rem" }}>
+                ${filteredTasks.length > 0 ? html`
+                  <div className="list">
+                    ${filteredTasks.map(t => html`
+                      <div className="list-item" key=${t.id}>
+                        <button
+                          className=${`btn-icon ${t.status === "done" ? "success-ghost" : "ghost"}`}
+                          onClick=${() => toggleTask(t)}
+                          title=${t.status === "done" ? "Mark as open" : "Mark as done"}
+                          style=${{ flexShrink: 0 }}
+                        >
+                          <${Icon} name=${t.status === "done" ? "check" : "check-square"} size=${16} />
+                        </button>
+                        <div className="list-item-content">
+                          <div className=${`list-item-title ${t.status === "done" ? "done" : ""}`}>${t.title}</div>
+                          <div className="list-item-meta">
+                            ${t.due_date ? html`<span><${Icon} name="clock" size=${12} /> ${formatDate(t.due_date)} (${relativeTime(t.due_date)})</span>` : html`<span className="muted">No due date</span>`}
+                            ${t.due_date ? html`<span className="status-badge pending">reminder set</span>` : ""}
                           </div>
                         </div>
-                      `)}
-                    </div>
-                  ` : renderEmptyState("check-square", "No tasks in this filter", "Add a task to get started tracking your work.", "Focus Form", () => document.querySelector(".section-panel input")?.focus())}
-                </div>
-              `}
-
-              <!-- REMINDERS TAB -->
-              ${taskSubTab === "reminders" && html`
-                <form onSubmit=${submitReminder} className="stack">
-                  <input required value=${reminderForm.message} onInput=${(e) => setReminderForm({ ...reminderForm, message: e.target.value })} placeholder="Reminder message" />
-                  <input required value=${reminderForm.target} onInput=${(e) => setReminderForm({ ...reminderForm, target: e.target.value })} placeholder="Telegram chat ID" />
-                  <input type="datetime-local" required value=${reminderForm.remindAt} onInput=${(e) => setReminderForm({ ...reminderForm, remindAt: e.target.value })} />
-                  <div className="flex-row">
-                    ${[
-                      { label: "+15m", mins: 15 }, { label: "+30m", mins: 30 },
-                      { label: "+1h", mins: 60 }, { label: "+3h", mins: 180 },
-                      { label: "Tomorrow 9am", mins: null },
-                    ].map(p => html`
-                      <button key=${p.label} className="ghost sm" onClick=${(e) => {
-                        e.preventDefault();
-                        if (p.mins !== null) {
-                          setReminderForm({ ...reminderForm, remindAt: toIsoLocalDateTime(p.mins) });
-                        } else {
-                          const t = new Date(); t.setDate(t.getDate() + 1); t.setHours(9, 0, 0, 0);
-                          const yyyy = t.getFullYear(), mm = String(t.getMonth()+1).padStart(2,"0"), dd = String(t.getDate()).padStart(2,"0");
-                          setReminderForm({ ...reminderForm, remindAt: `${yyyy}-${mm}-${dd}T09:00` });
-                        }
-                      }}><${Icon} name="clock" size=${12} /> ${p.label}</button>
+                        <div className="list-item-actions">
+                          <button className="btn-icon ghost sm" onClick=${() => editTask(t)} title="Edit"><${Icon} name="edit" size=${14} /></button>
+                          <button className="btn-icon danger-ghost sm" onClick=${() => deleteTask(t.id)} title="Delete"><${Icon} name="trash" size=${14} /></button>
+                        </div>
+                      </div>
                     `)}
                   </div>
-                  <label className="inline-check">
-                    <input type="checkbox" checked=${reminderForm.recurring} onChange=${(e) => setReminderForm({ ...reminderForm, recurring: e.target.checked })} />
-                    <${Icon} name="repeat" size=${14} /> Repeat this reminder
-                  </label>
-                  ${reminderForm.recurring && html`<input type="number" min="1" placeholder="Recurrence interval (minutes)" value=${reminderForm.recurrenceMinutes} onInput=${(e) => setReminderForm({ ...reminderForm, recurrenceMinutes: e.target.value })} />`}
-                  <button disabled=${busy}><${Icon} name="bell" size=${16} /> Schedule Reminder</button>
-                </form>
-
-                <div style=${{ marginTop: "1.25rem" }}>
-                  ${filteredReminders.length > 0 ? html`
-                    <div className="list">
-                      ${filteredReminders.map(r => html`
-                        <div className="list-item" key=${r.id}>
-                          <div className="list-item-content">
-                            <div className="list-item-title">${r.message}</div>
-                            <div className="list-item-meta">
-                              <span className=${`status-badge ${r.status}`}>${r.status}</span>
-                              <span><${Icon} name="send" size=${12} /> ${r.channel} → ${r.target}</span>
-                              <span><${Icon} name="clock" size=${12} /> ${formatDate(r.remind_at)} (${relativeTime(r.remind_at)})</span>
-                              ${r.is_recurring ? html`<span><${Icon} name="repeat" size=${12} /> every ${r.recurrence_minutes}m</span>` : ""}
-                              ${r.last_error ? html`<span class="error-text" title=${r.last_error}>⚠ error</span>` : ""}
-                            </div>
-                          </div>
-                          <div className="list-item-actions">
-                            ${r.status === "pending" ? html`
-                              <button className="success-ghost sm" onClick=${() => sendNow(r.id)} title="Send Now"><${Icon} name="send" size=${14} /> Send</button>
-                            ` : ""}
-                            <button className="btn-icon danger-ghost sm" onClick=${() => deleteReminder(r.id)} title="Delete"><${Icon} name="trash" size=${14} /></button>
-                          </div>
-                        </div>
-                      `)}
-                    </div>
-                  ` : renderEmptyState("bell", "No reminders yet", "Schedule your first reminder using the form above.", "Focus Form", () => document.querySelector(".section-panel input")?.focus())}
-                </div>
-              `}
+                ` : renderEmptyState("check-square", "No tasks yet", "Add a task and optional due date to get reminders.", "Focus Form", () => document.querySelector(".section-panel input")?.focus())}
+              </div>
             </section>
           `}
 

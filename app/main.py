@@ -41,6 +41,7 @@ from app.routes.miniapp import router as miniapp_router
 from app.routes.web import router as web_router
 from app.services.api_keys import ensure_bootstrap_api_key
 from app.services.daily_digest import maybe_send_daily_digest
+from app.services.datetime_service import utc_now_naive
 from app.services.reminder_dispatcher import dispatch_reminder
 from app.services.telegram_bot import TelegramBotWorker, delete_webhook, register_webhook
 
@@ -64,7 +65,7 @@ telegram_bot_worker = TelegramBotWorker()
 def process_due_reminders() -> None:
     db: Session = SessionLocal()
     try:
-        now = datetime.utcnow()
+        now = utc_now_naive()
         due = (
             db.query(models.Reminder)
             .filter(models.Reminder.status.in_(["pending", "failed"]))

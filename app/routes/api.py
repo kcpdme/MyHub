@@ -40,6 +40,12 @@ from app.services.media_storage import get_media_from_r2, is_r2_enabled, media_o
 from app.services.reminder_dispatcher import dispatch_reminder
 from app.services.summary_service import get_today_summary
 from app.services import webhook_dispatcher
+from app.services.datetime_service import (
+    local_today_string,
+    normalize_client_datetime,
+    utc_now_naive,
+)
+from app.services.task_reminder_service import delete_task_due_reminders, upsert_task_due_reminder
 
 router = APIRouter(prefix="/api", tags=["api"], dependencies=[Depends(require_api_key)])
 
@@ -338,7 +344,7 @@ def promote_inbox_to_task(
         raise HTTPException(status_code=400, detail="priority must be low, medium, or high")
 
     title = item.text.strip() or f"Review Telegram {item.item_type} item #{item.message_id}"
-    now = datetime.utcnow()
+    now = utc_now_naive()
     task = models.Task(title=title[:255], description="", status="todo", priority=priority, updated_at=now)
     db.add(task)
     db.delete(item)
@@ -359,7 +365,7 @@ def promote_inbox_to_note(item_id: int, db: Session = Depends(get_db)):
     if not content:
         content = f"[{item.item_type}] Telegram media #{item.message_id}"
 
-    now = datetime.utcnow()
+    now = utc_now_naive()
     note = models.EncryptedNote(title="", cipher_text=encrypt_text(content), created_at=now, updated_at=now)
     db.add(note)
     db.delete(item)
@@ -433,7 +439,7 @@ def promote_capture_to_note(capture_id: int, db: Session = Depends(get_db)):
     if not capture:
         raise HTTPException(status_code=404, detail="Capture not found")
 
-    now = datetime.utcnow()
+    now = utc_now_naive()
     note = models.EncryptedNote(
         title=capture.content[:80],
         cipher_text=encrypt_text(capture.content),
@@ -482,10 +488,12 @@ def create_task(payload: schemas.TaskCreate, db: Session = Depends(get_db)):
         title=title,
         description=payload.description.strip() if payload.description else "",
         priority=priority,
-        due_date=payload.due_date,
+        due_date=normalize_client_datetime(payload.due_date),
         updated_at=now,
     )
     db.add(task)
+    db.flush()
+    upsert_task_due_reminder(db, task)
     _audit(db, "task", None, "created", detail={"title": title})
     db.commit()
     db.refresh(task)
@@ -499,7 +507,7 @@ def update_task(task_id: int, payload: schemas.TaskUpdate, db: Session = Depends
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    now = datetime.utcnow()
+    now = utc_now_naive()
     prev_status = task.status
 
     if payload.title is not None:
@@ -527,9 +535,10 @@ def update_task(task_id: int, payload: schemas.TaskUpdate, db: Session = Depends
     if payload.clear_due_date:
         task.due_date = None
     elif payload.due_date is not None:
-        task.due_date = payload.due_date
+        task.due_date = normalize_client_datetime(payload.due_date)
 
     task.updated_at = now
+    upsert_task_due_reminder(db, task)
     db.add(task)
     _audit(db, "task", task_id, "updated", detail={"status": task.status})
     db.commit()
@@ -545,6 +554,7 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
     task = db.query(models.Task).filter(models.Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    delete_task_due_reminders(db, task_id)
     _audit(db, "task", task_id, "deleted")
     db.delete(task)
     db.commit()
@@ -559,20 +569,23 @@ def batch_task_action(action: str, ids: list[int], db: Session = Depends(get_db)
         raise HTTPException(status_code=400, detail="ids cannot be empty")
 
     tasks = db.query(models.Task).filter(models.Task.id.in_(ids)).all()
-    now = datetime.utcnow()
+    now = utc_now_naive()
     count = 0
     for t in tasks:
         if action == "mark_done":
             t.status = "done"
             t.completed_at = now
             t.updated_at = now
+            upsert_task_due_reminder(db, t)
             db.add(t)
         elif action == "mark_todo":
             t.status = "todo"
             t.completed_at = None
             t.updated_at = now
+            upsert_task_due_reminder(db, t)
             db.add(t)
         elif action == "delete":
+            delete_task_due_reminders(db, t.id)
             db.delete(t)
         count += 1
     db.commit()
@@ -649,7 +662,7 @@ def create_reminder(payload: schemas.ReminderCreate, db: Session = Depends(get_d
         message=payload.message.strip(),
         channel=channel,
         target=payload.target.strip(),
-        remind_at=payload.remind_at,
+        remind_at=normalize_client_datetime(payload.remind_at),
         is_recurring=payload.is_recurring,
         recurrence_minutes=recurrence_minutes,
         status="pending",
@@ -687,7 +700,7 @@ def snooze_reminder(
         message=f"[Snoozed] {reminder.message}",
         channel=reminder.channel,
         target=reminder.target,
-        remind_at=datetime.utcnow() + timedelta(minutes=minutes),
+        remind_at=utc_now_naive() + timedelta(minutes=minutes),
         is_recurring=False,
         recurrence_minutes=None,
         status="pending",
@@ -910,7 +923,7 @@ def toggle_habit(habit_id: int, payload: schemas.HabitToggle = None, db: Session
     if not habit:
         raise HTTPException(status_code=404, detail="Habit not found")
 
-    log_date = payload.date or datetime.utcnow().strftime("%Y-%m-%d")
+    log_date = payload.date or local_today_string()
     existing = (
         db.query(models.HabitLog)
         .filter(models.HabitLog.habit_id == habit_id)

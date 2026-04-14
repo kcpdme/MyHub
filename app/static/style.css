@@ -743,6 +743,35 @@ select {
 }
 .inline-check input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--green-600); }
 
+/* Task scheduling controls */
+.task-date-time-wrap {
+  border: 1px solid var(--line-soft);
+  background: var(--surface-2);
+  border-radius: var(--r-10);
+  padding: 0.65rem 0.7rem;
+}
+
+.task-datetime-row {
+  display: grid;
+  grid-template-columns: 1fr 140px;
+  gap: 0.55rem;
+}
+
+.task-datetime-input {
+  min-height: 38px;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-preset-row {
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+html.dark .task-date-time-wrap {
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+
 /* ═══════════════════════════════════
    SECTION PANELS
    ═══════════════════════════════════ */

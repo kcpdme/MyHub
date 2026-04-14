@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app import models
+from app.services.datetime_service import utc_now_naive
 from app.services.channels.telegram_sender import send_telegram
 from app.services.channels.email_sender import send_email
 from app.services import webhook_dispatcher
@@ -36,11 +37,11 @@ def dispatch_reminder(db: Session, reminder: models.Reminder) -> tuple[bool, str
     if ok:
         if reminder.is_recurring and reminder.recurrence_minutes:
             reminder.status = "pending"
-            reminder.remind_at = datetime.utcnow() + timedelta(minutes=reminder.recurrence_minutes)
+            reminder.remind_at = utc_now_naive() + timedelta(minutes=reminder.recurrence_minutes)
         else:
             reminder.status = "sent"
         reminder.last_error = ""
-        reminder.sent_at = datetime.utcnow()
+        reminder.sent_at = utc_now_naive()
 
         # Fire outbound webhook so external systems know a reminder was sent.
         webhook_dispatcher.fire_event("reminder.sent", {
