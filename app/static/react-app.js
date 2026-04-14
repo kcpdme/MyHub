@@ -122,27 +122,29 @@ async function copyToClipboard(text) {
 }
 
 const NAV_CONFIG = [
-  { id: "summary", label: "Overview", icon: "layout-dashboard" },
-  { id: "captures", label: "Captures", icon: "pen-line" },
-  { id: "inbox", label: "Inbox", icon: "inbox" },
-  { id: "tasks", label: "Tasks", icon: "check-square" },
-  { id: "notes", label: "Notes", icon: "file-lock" },
-  { id: "reminders", label: "Reminders", icon: "bell" },
-  { id: "habits", label: "Habits", icon: "target" },
-  { id: "pomodoro", label: "Focus Timer", icon: "timer" },
-  { id: "settings", label: "Settings", icon: "settings" },
+  { id: "summary",  label: "Overview",  icon: "layout-dashboard" },
+  { id: "captures", label: "Captures",  icon: "pen-line" },
+  { id: "inbox",    label: "Inbox",     icon: "inbox" },
+  { id: "tasks",    label: "Tasks",     icon: "check-square" },
+  { id: "notes",    label: "Notes",     icon: "file-lock" },
+];
+
+/* Secondary nav (shown as icon-buttons in the topbar) */
+const TOPBAR_EXTRA = [
+  { id: "habits",   label: "Habits",       icon: "target" },
+  { id: "pomodoro", label: "Focus Timer",   icon: "timer" },
+  { id: "settings", label: "Settings",      icon: "settings" },
 ];
 
 const SECTION_META = {
-  summary: { title: "Overview", subtitle: "Activity snapshot and operational health at a glance." },
-  captures: { title: "Quick Capture", subtitle: "Save ideas, links, and context before they're lost." },
-  inbox: { title: "Telegram Inbox", subtitle: "Review and triage incoming items from your bot." },
-  tasks: { title: "Task Board", subtitle: "Track priorities and execution progress." },
-  notes: { title: "Encrypted Notes", subtitle: "Secure, encrypted notes stored at rest." },
-  reminders: { title: "Reminders", subtitle: "Schedule delivery with optional recurrence." },
-  habits: { title: "Habit Tracker", subtitle: "Build consistent habits with daily tracking and streaks." },
-  pomodoro: { title: "Focus Timer", subtitle: "Pomodoro technique — work in focused intervals." },
-  settings: { title: "Settings", subtitle: "Configure keys, preferences, and workspace." },
+  summary:  { title: "Overview",       subtitle: "Activity snapshot and operational health at a glance." },
+  captures: { title: "Quick Capture",  subtitle: "Save ideas, links, and context before they're lost." },
+  inbox:    { title: "Telegram Inbox", subtitle: "Review and triage incoming items from your bot." },
+  tasks:    { title: "Tasks",          subtitle: "Track priorities, execution progress and reminders." },
+  notes:    { title: "Encrypted Notes",subtitle: "Secure, encrypted notes stored at rest." },
+  habits:   { title: "Habit Tracker",  subtitle: "Build consistent habits with daily tracking and streaks." },
+  pomodoro: { title: "Focus Timer",    subtitle: "Pomodoro technique — work in focused intervals." },
+  settings: { title: "Settings",       subtitle: "Configure keys, preferences, and workspace." },
 };
 
 /* ─── Confirm Dialog Component ─── */
@@ -375,6 +377,7 @@ function App() {
   const [inboxView, setInboxView] = useState(localStorage.getItem("hub_inbox_view") || "list");
   const [darkMode, setDarkMode] = useState(isMiniApp ? true : localStorage.getItem("hub_dark_mode") === "true");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [taskSubTab, setTaskSubTab] = useState("tasks"); // "tasks" | "reminders"
   // Mini App mode: read API key from sessionStorage (set by miniapp.html auth handshake).
   const [apiKey, setApiKey] = useState(
     isMiniApp
@@ -1111,44 +1114,25 @@ function App() {
         <!-- Sidebar -->
         <aside id="main-sidebar" className=${`panel sidebar ${sidebarOpen ? "open" : ""}`}>
           <div className="sidebar-brand">
-            <div className="brand-icon"><${Icon} name="zap" size=${20} /></div>
+            <div className="brand-icon"><${Icon} name="zap" size=${18} /></div>
             <div className="brand-text">
               <div className="brand-name">AutoHub</div>
               <div className="brand-subtitle">Command Center</div>
             </div>
-            <span className="brand-version">v2</span>
           </div>
 
-          <div className="sidebar-label">Workspace</div>
           <nav className="sidebar-nav">
-            ${NAV_CONFIG.filter(n => ["summary","captures","inbox","tasks","notes","reminders"].includes(n.id)).map((item) => html`
+            ${NAV_CONFIG.map((item) => html`
               <button
                 key=${item.id}
                 id=${`nav-${item.id}`}
                 className=${`nav-link ${section === item.id ? "active" : ""}`}
                 onClick=${() => openSection(item.id)}
               >
-                <${Icon} name=${item.icon} size=${16} />
+                <${Icon} name=${item.icon} size=${15} />
                 ${item.label}
                 ${item.id === "inbox" && inboxItems.length > 0 ? html`<span className="nav-badge pulse-badge">${inboxItems.length}</span>` : ""}
                 ${item.id === "tasks" && tasks.filter(t => t.status !== "done").length > 0 ? html`<span className="nav-badge">${tasks.filter(t => t.status !== "done").length}</span>` : ""}
-                ${item.id === "reminders" && reminders.filter(r => r.status === "pending").length > 0 ? html`<span className="nav-badge">${reminders.filter(r => r.status === "pending").length}</span>` : ""}
-              </button>
-            `)}
-          </nav>
-
-          <div className="sidebar-label">Tools</div>
-          <nav className="sidebar-nav" style=${{ flex: "0 0 auto" }}>
-            ${NAV_CONFIG.filter(n => ["habits","pomodoro","settings"].includes(n.id)).map((item) => html`
-              <button
-                key=${item.id}
-                id=${`nav-${item.id}`}
-                className=${`nav-link ${section === item.id ? "active" : ""}`}
-                onClick=${() => openSection(item.id)}
-              >
-                <${Icon} name=${item.icon} size=${16} />
-                ${item.label}
-                ${item.id === "habits" && habits.length > 0 ? html`<span className="nav-badge">${habitsCompletedToday}/${habits.length}</span>` : ""}
               </button>
             `)}
           </nav>
@@ -1156,9 +1140,7 @@ function App() {
           <div className="sidebar-footer">
             ${isMiniApp ? html`
               <div className="sidebar-user-chip">
-                <div className="sidebar-user-avatar">
-                  ${(miniAppUser.first_name || "T").charAt(0).toUpperCase()}
-                </div>
+                <div className="sidebar-user-avatar">${(miniAppUser.first_name || "T").charAt(0).toUpperCase()}</div>
                 <div className="sidebar-user-info">
                   <div className="sidebar-user-name">${miniAppUser.first_name || "Telegram User"}</div>
                   <div className="sidebar-user-role">Mini App</div>
@@ -1173,22 +1155,10 @@ function App() {
                 </div>
               </div>
             `}
-            <button className="nav-link" onClick=${() => setDarkMode(v => !v)}>
-              <${Icon} name=${darkMode ? "sun" : "moon"} size=${15} /> ${darkMode ? "Light Mode" : "Dark Mode"}
+            <button className="nav-link" onClick=${logout} style=${{ color: isMiniApp ? "inherit" : "var(--red-600)" }}>
+              <${Icon} name=${isMiniApp ? "x" : "log-out"} size=${15} />
+              ${isMiniApp ? "Close App" : "Logout"}
             </button>
-            <button className="nav-link" onClick=${() => setShowShortcuts(true)}>
-              <${Icon} name="keyboard" size=${15} /> Shortcuts
-              <span className="nav-badge" style=${{ marginLeft: "auto" }}>?</span>
-            </button>
-            ${isMiniApp ? html`
-              <button className="nav-link" onClick=${logout}>
-                <${Icon} name="x" size=${15} /> Close App
-              </button>
-            ` : html`
-              <button className="nav-link" onClick=${logout} style=${{ color: "#f87171" }}>
-                <${Icon} name="log-out" size=${15} /> Logout
-              </button>
-            `}
           </div>
         </aside>
 
@@ -1197,39 +1167,48 @@ function App() {
           <!-- Topbar -->
           <header className="panel topbar">
             <div className="topbar-left">
-              <div className="flex-row">
-                <button className="menu-toggle btn-icon ghost" onClick=${() => setSidebarOpen(v => !v)} aria-controls="main-sidebar" aria-expanded=${sidebarOpen}>
-                  <${Icon} name="menu" size=${20} />
-                </button>
-                <nav className="breadcrumb-nav" aria-label="Breadcrumb">
-                  <span className="bc-root">AutoHub</span>
-                  <span className="bc-sep">/</span>
-                  <span className="bc-current"><${Icon} name=${NAV_CONFIG.find(n => n.id === section)?.icon || "zap"} size=${13} />${meta.title}</span>
-                </nav>
-                <span className="topbar-date">${new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</span>
-              </div>
+              <button className="btn-icon ghost menu-toggle" onClick=${() => setSidebarOpen(v => !v)} aria-label="Toggle menu">
+                <${Icon} name="menu" size=${18} />
+              </button>
+              <span className="topbar-section-title">${meta.title || "AutoHub"}</span>
+              <span className="topbar-date">${new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</span>
             </div>
             <div className="topbar-right">
+              <!-- Secondary nav: Habits, Pomodoro, Settings -->
+              ${TOPBAR_EXTRA.map(item => html`
+                <button
+                  key=${item.id}
+                  className=${`topbar-nav-btn ${section === item.id ? "active" : ""}`}
+                  onClick=${() => openSection(item.id)}
+                  title=${item.label}
+                >
+                  <${Icon} name=${item.icon} size=${16} />
+                  ${item.id === "habits" && habits.length > 0 && habitsCompletedToday < habits.length ? html`<span className="topbar-nav-badge"></span>` : ""}
+                </button>
+              `)}
+              <div className="topbar-sep"></div>
               ${!["summary", "settings", "pomodoro", "habits"].includes(section) ? html`
                 <div className="search-bar">
-                  <${Icon} name="search" size=${16} />
+                  <${Icon} name="search" size=${15} />
                   <input
                     ref=${searchRef}
                     type="text"
-                    placeholder="Search ${meta.title.toLowerCase()}…"
+                    placeholder="Search…"
                     value=${searchQuery}
                     onInput=${(e) => setSearchQuery(e.target.value)}
-                    style=${{ width: "200px", paddingLeft: "2.4rem" }}
+                    style=${{ width: "160px", paddingLeft: "2.2rem" }}
                   />
                 </div>
               ` : ""}
-              <button className="ghost sm" onClick=${() => setDensity(v => v === "comfortable" ? "compact" : "comfortable")}>
-                ${density === "comfortable" ? "Compact" : "Comfortable"}
+              <button className="topbar-nav-btn" onClick=${() => setDarkMode(v => !v)} title=${darkMode ? "Light mode" : "Dark mode"}>
+                <${Icon} name=${darkMode ? "sun" : "moon"} size=${16} />
               </button>
-              <button className="ghost sm" onClick=${refreshAll} disabled=${busy}>
-                <${Icon} name="refresh-cw" size=${14} /> Refresh
+              <button className="topbar-nav-btn" onClick=${refreshAll} disabled=${busy} title="Refresh">
+                <${Icon} name="refresh-cw" size=${16} />
               </button>
               <div className=${`status-pill ${statusKind}`}>${busy ? "Syncing…" : status || "Ready"}</div>
+            </div>
+          </header>
             </div>
           </header>
 
@@ -1451,84 +1430,162 @@ function App() {
             </section>
           `}
 
-          <!-- ═══ TASKS SECTION ═══ -->
+          <!-- ═══ TASKS + REMINDERS SECTION ═══ -->
           ${section === "tasks" && html`
             <section className="panel section-panel" id="section-tasks">
               <div className="section-head">
-                <h2><${Icon} name="check-square" /> Tasks</h2>
-                <p className="muted">Prioritize work and track execution progress.</p>
-              </div>
-              <form onSubmit=${submitTask} className="stack">
-                <input required value=${taskForm.title} onInput=${(e) => setTaskForm({ ...taskForm, title: e.target.value })} placeholder="What needs to be done?" />
-                <div className="row row-2">
-                  <select value=${taskForm.priority} onChange=${(e) => setTaskForm({ ...taskForm, priority: e.target.value })}>
-                    <option value="low">Low Priority</option>
-                    <option value="medium">Medium Priority</option>
-                    <option value="high">High Priority</option>
-                  </select>
-                  <input type="date" value=${taskForm.dueDate} onInput=${(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} />
-                </div>
-                <button disabled=${busy}><${Icon} name="plus" size=${16} /> Add Task</button>
-              </form>
-
-              <div className="filter-row" style=${{ marginTop: "1rem" }}>
-                ${["all", "todo", "in_progress", "done"].map(f => html`
-                  <button key=${f} className=${`ghost sm ${taskFilter === f ? "active" : ""}`} onClick=${() => setTaskFilter(f)}>
-                    ${f === "all" ? "All" : f === "todo" ? "To Do" : f === "in_progress" ? "In Progress" : "Done"} ${f !== "all" ? `(${tasks.filter(t => t.status === f).length})` : `(${tasks.length})`}
-                  </button>
-                `)}
+                <h2><${Icon} name="check-square" /> Tasks & Reminders</h2>
+                <p className="muted">Track work and schedule Telegram reminders — all in one place.</p>
               </div>
 
-              <!-- Task progress bar -->
-              ${tasksTotal > 0 ? html`
-                <div style=${{ margin: "0.75rem 0 0.25rem" }}>
-                  <${ProgressBar} value=${tasksDone} max=${tasksTotal} label="Completion" color="var(--green-500)" />
-                </div>
-              ` : ""}
+              <!-- Sub-tab switcher -->
+              <div className="sub-tab-bar">
+                <button
+                  className=${`sub-tab ${taskSubTab === "tasks" ? "active" : ""}`}
+                  onClick=${() => setTaskSubTab("tasks")}
+                >
+                  <${Icon} name="check-square" size=${13} /> Tasks
+                  ${tasks.filter(t => t.status !== "done").length > 0 ? ` (${tasks.filter(t => t.status !== "done").length} open)` : ""}
+                </button>
+                <button
+                  className=${`sub-tab ${taskSubTab === "reminders" ? "active" : ""}`}
+                  onClick=${() => setTaskSubTab("reminders")}
+                >
+                  <${Icon} name="bell" size=${13} /> Reminders
+                  ${reminders.filter(r => r.status === "pending").length > 0 ? ` (${reminders.filter(r => r.status === "pending").length} pending)` : ""}
+                </button>
+              </div>
 
-              <div style=${{ marginTop: "0.5rem" }}>
-                ${filteredTasks.length > 0 ? html`
-                  <div className="list">
-                    ${filteredTasks.map(t => html`
-                      <div className="list-item" key=${t.id}>
-                        <button
-                          className=${`btn-icon ${t.status === "done" ? "success-ghost" : t.status === "in_progress" ? "ghost" : "ghost"}`}
-                          onClick=${() => toggleTask(t)}
-                          title=${t.status === "done" ? "Mark as Todo" : t.status === "todo" ? "Start Working" : "Mark as Done"}
-                          style=${{ flexShrink: 0 }}
-                        >
-                          <${Icon} name=${t.status === "done" ? "check" : t.status === "in_progress" ? "loader" : "check-square"} size=${16} />
-                        </button>
-                        <div className="list-item-content">
-                          <div className=${`list-item-title ${t.status === "done" ? "done" : ""}`}>${t.title}</div>
-                          <div className="list-item-meta">
-                            <span className=${`priority-badge ${t.priority}`}>${t.priority}</span>
-                            <span className=${`status-badge ${t.status}`}>${t.status === "in_progress" ? "in progress" : t.status}</span>
-                            ${t.due_date ? html`<span><${Icon} name="clock" size=${12} /> ${formatDateShort(t.due_date)}</span>` : ""}
-                          </div>
-                          ${t.status !== "done" ? html`
-                            <div className="task-quick-status" style=${{ marginTop: "0.35rem" }}>
-                              ${t.status !== "todo" ? html`<button className="ghost sm" onClick=${() => setTaskStatus(t, "todo")}><${Icon} name="undo" size=${11} /> To Do</button>` : ""}
-                              ${t.status !== "in_progress" ? html`<button className="ghost sm" onClick=${() => setTaskStatus(t, "in_progress")}><${Icon} name="loader" size=${11} /> In Progress</button>` : ""}
-                              ${t.status !== "done" ? html`<button className="success-ghost sm" onClick=${() => setTaskStatus(t, "done")}><${Icon} name="check" size=${11} /> Done</button>` : ""}
+              <!-- TASKS TAB -->
+              ${taskSubTab === "tasks" && html`
+                <form onSubmit=${submitTask} className="stack">
+                  <input required value=${taskForm.title} onInput=${(e) => setTaskForm({ ...taskForm, title: e.target.value })} placeholder="What needs to be done?" />
+                  <div className="row row-2">
+                    <select value=${taskForm.priority} onChange=${(e) => setTaskForm({ ...taskForm, priority: e.target.value })}>
+                      <option value="low">Low Priority</option>
+                      <option value="medium">Medium Priority</option>
+                      <option value="high">High Priority</option>
+                    </select>
+                    <input type="date" value=${taskForm.dueDate} onInput=${(e) => setTaskForm({ ...taskForm, dueDate: e.target.value })} />
+                  </div>
+                  <button disabled=${busy}><${Icon} name="plus" size=${16} /> Add Task</button>
+                </form>
+
+                <div className="filter-row" style=${{ marginTop: "1rem" }}>
+                  ${["all", "todo", "in_progress", "done"].map(f => html`
+                    <button key=${f} className=${`ghost sm ${taskFilter === f ? "active" : ""}`} onClick=${() => setTaskFilter(f)}>
+                      ${f === "all" ? "All" : f === "todo" ? "To Do" : f === "in_progress" ? "In Progress" : "Done"} ${f !== "all" ? `(${tasks.filter(t => t.status === f).length})` : `(${tasks.length})`}
+                    </button>
+                  `)}
+                </div>
+
+                ${tasksTotal > 0 ? html`
+                  <div style=${{ margin: "0.75rem 0 0.25rem" }}>
+                    <${ProgressBar} value=${tasksDone} max=${tasksTotal} label="Completion" color="var(--green-500)" />
+                  </div>
+                ` : ""}
+
+                <div style=${{ marginTop: "0.5rem" }}>
+                  ${filteredTasks.length > 0 ? html`
+                    <div className="list">
+                      ${filteredTasks.map(t => html`
+                        <div className="list-item" key=${t.id}>
+                          <button
+                            className=${`btn-icon ${t.status === "done" ? "success-ghost" : "ghost"}`}
+                            onClick=${() => toggleTask(t)}
+                            title=${t.status === "done" ? "Mark as Todo" : t.status === "todo" ? "Start Working" : "Mark as Done"}
+                            style=${{ flexShrink: 0 }}
+                          >
+                            <${Icon} name=${t.status === "done" ? "check" : t.status === "in_progress" ? "loader" : "check-square"} size=${16} />
+                          </button>
+                          <div className="list-item-content">
+                            <div className=${`list-item-title ${t.status === "done" ? "done" : ""}`}>${t.title}</div>
+                            <div className="list-item-meta">
+                              <span className=${`priority-badge ${t.priority}`}>${t.priority}</span>
+                              <span className=${`status-badge ${t.status}`}>${t.status === "in_progress" ? "in progress" : t.status}</span>
+                              ${t.due_date ? html`<span><${Icon} name="clock" size=${12} /> ${formatDateShort(t.due_date)}</span>` : ""}
                             </div>
-                          ` : ""}
+                            ${t.status !== "done" ? html`
+                              <div className="task-quick-status" style=${{ marginTop: "0.35rem" }}>
+                                ${t.status !== "todo" ? html`<button className="ghost sm" onClick=${() => setTaskStatus(t, "todo")}><${Icon} name="undo" size=${11} /> To Do</button>` : ""}
+                                ${t.status !== "in_progress" ? html`<button className="ghost sm" onClick=${() => setTaskStatus(t, "in_progress")}><${Icon} name="loader" size=${11} /> In Progress</button>` : ""}
+                                ${t.status !== "done" ? html`<button className="success-ghost sm" onClick=${() => setTaskStatus(t, "done")}><${Icon} name="check" size=${11} /> Done</button>` : ""}
+                              </div>
+                            ` : ""}
+                          </div>
+                          <div className="list-item-actions">
+                            <button className="btn-icon ghost sm" onClick=${() => editTask(t)} title="Edit"><${Icon} name="edit" size=${14} /></button>
+                            <button className="btn-icon danger-ghost sm" onClick=${() => deleteTask(t.id)} title="Delete"><${Icon} name="trash" size=${14} /></button>
+                          </div>
                         </div>
-                        <div className="list-item-actions">
-                          <button className="btn-icon ghost sm" onClick=${() => editTask(t)} title="Edit">
-                            <${Icon} name="edit" size=${14} />
-                          </button>
-                          <button className="btn-icon danger-ghost sm" onClick=${() => deleteTask(t.id)} title="Delete">
-                            <${Icon} name="trash" size=${14} />
-                          </button>
-                        </div>
-                      </div>
+                      `)}
+                    </div>
+                  ` : renderEmptyState("check-square", "No tasks in this filter", "Add a task to get started tracking your work.", "Focus Form", () => document.querySelector(".section-panel input")?.focus())}
+                </div>
+              `}
+
+              <!-- REMINDERS TAB -->
+              ${taskSubTab === "reminders" && html`
+                <form onSubmit=${submitReminder} className="stack">
+                  <input required value=${reminderForm.message} onInput=${(e) => setReminderForm({ ...reminderForm, message: e.target.value })} placeholder="Reminder message" />
+                  <input required value=${reminderForm.target} onInput=${(e) => setReminderForm({ ...reminderForm, target: e.target.value })} placeholder="Telegram chat ID" />
+                  <input type="datetime-local" required value=${reminderForm.remindAt} onInput=${(e) => setReminderForm({ ...reminderForm, remindAt: e.target.value })} />
+                  <div className="flex-row">
+                    ${[
+                      { label: "+15m", mins: 15 }, { label: "+30m", mins: 30 },
+                      { label: "+1h", mins: 60 }, { label: "+3h", mins: 180 },
+                      { label: "Tomorrow 9am", mins: null },
+                    ].map(p => html`
+                      <button key=${p.label} className="ghost sm" onClick=${(e) => {
+                        e.preventDefault();
+                        if (p.mins !== null) {
+                          setReminderForm({ ...reminderForm, remindAt: toIsoLocalDateTime(p.mins) });
+                        } else {
+                          const t = new Date(); t.setDate(t.getDate() + 1); t.setHours(9, 0, 0, 0);
+                          const yyyy = t.getFullYear(), mm = String(t.getMonth()+1).padStart(2,"0"), dd = String(t.getDate()).padStart(2,"0");
+                          setReminderForm({ ...reminderForm, remindAt: `${yyyy}-${mm}-${dd}T09:00` });
+                        }
+                      }}><${Icon} name="clock" size=${12} /> ${p.label}</button>
                     `)}
                   </div>
-                ` : renderEmptyState("check-square", "No tasks in this filter", "Add a task to get started tracking your work.", "Focus Form", () => document.querySelector(".section-panel input")?.focus())}
-              </div>
+                  <label className="inline-check">
+                    <input type="checkbox" checked=${reminderForm.recurring} onChange=${(e) => setReminderForm({ ...reminderForm, recurring: e.target.checked })} />
+                    <${Icon} name="repeat" size=${14} /> Repeat this reminder
+                  </label>
+                  ${reminderForm.recurring && html`<input type="number" min="1" placeholder="Recurrence interval (minutes)" value=${reminderForm.recurrenceMinutes} onInput=${(e) => setReminderForm({ ...reminderForm, recurrenceMinutes: e.target.value })} />`}
+                  <button disabled=${busy}><${Icon} name="bell" size=${16} /> Schedule Reminder</button>
+                </form>
+
+                <div style=${{ marginTop: "1.25rem" }}>
+                  ${filteredReminders.length > 0 ? html`
+                    <div className="list">
+                      ${filteredReminders.map(r => html`
+                        <div className="list-item" key=${r.id}>
+                          <div className="list-item-content">
+                            <div className="list-item-title">${r.message}</div>
+                            <div className="list-item-meta">
+                              <span className=${`status-badge ${r.status}`}>${r.status}</span>
+                              <span><${Icon} name="send" size=${12} /> ${r.channel} → ${r.target}</span>
+                              <span><${Icon} name="clock" size=${12} /> ${formatDate(r.remind_at)} (${relativeTime(r.remind_at)})</span>
+                              ${r.is_recurring ? html`<span><${Icon} name="repeat" size=${12} /> every ${r.recurrence_minutes}m</span>` : ""}
+                              ${r.last_error ? html`<span class="error-text" title=${r.last_error}>⚠ error</span>` : ""}
+                            </div>
+                          </div>
+                          <div className="list-item-actions">
+                            ${r.status === "pending" ? html`
+                              <button className="success-ghost sm" onClick=${() => sendNow(r.id)} title="Send Now"><${Icon} name="send" size=${14} /> Send</button>
+                            ` : ""}
+                            <button className="btn-icon danger-ghost sm" onClick=${() => deleteReminder(r.id)} title="Delete"><${Icon} name="trash" size=${14} /></button>
+                          </div>
+                        </div>
+                      `)}
+                    </div>
+                  ` : renderEmptyState("bell", "No reminders yet", "Schedule your first reminder using the form above.", "Focus Form", () => document.querySelector(".section-panel input")?.focus())}
+                </div>
+              `}
             </section>
           `}
+
 
           <!-- ═══ NOTES SECTION ═══ -->
           ${section === "notes" && html`
@@ -1579,83 +1636,6 @@ function App() {
             </section>
           `}
 
-          <!-- ═══ REMINDERS SECTION ═══ -->
-          ${section === "reminders" && html`
-            <section className="panel section-panel" id="section-reminders">
-              <div className="section-head">
-                <h2><${Icon} name="bell" /> Reminders</h2>
-                <p className="muted">Schedule Telegram message delivery with optional recurrence.</p>
-              </div>
-              <form onSubmit=${submitReminder} className="stack">
-                <input required value=${reminderForm.message} onInput=${(e) => setReminderForm({ ...reminderForm, message: e.target.value })} placeholder="Reminder message" />
-                <input required value=${reminderForm.target} onInput=${(e) => setReminderForm({ ...reminderForm, target: e.target.value })} placeholder="Telegram chat ID" />
-                <input type="datetime-local" required value=${reminderForm.remindAt} onInput=${(e) => setReminderForm({ ...reminderForm, remindAt: e.target.value })} />
-                <div className="flex-row">
-                  ${[
-                    { label: "+15m", mins: 15 },
-                    { label: "+30m", mins: 30 },
-                    { label: "+1h", mins: 60 },
-                    { label: "+3h", mins: 180 },
-                    { label: "Tomorrow 9am", mins: null },
-                  ].map(p => html`
-                    <button key=${p.label} className="ghost sm" onClick=${(e) => {
-                      e.preventDefault();
-                      if (p.mins !== null) {
-                        setReminderForm({ ...reminderForm, remindAt: toIsoLocalDateTime(p.mins) });
-                      } else {
-                        const tomorrow = new Date();
-                        tomorrow.setDate(tomorrow.getDate() + 1);
-                        tomorrow.setHours(9, 0, 0, 0);
-                        const yyyy = tomorrow.getFullYear();
-                        const mm = String(tomorrow.getMonth() + 1).padStart(2, "0");
-                        const dd = String(tomorrow.getDate()).padStart(2, "0");
-                        setReminderForm({ ...reminderForm, remindAt: `${yyyy}-${mm}-${dd}T09:00` });
-                      }
-                    }}>
-                      <${Icon} name="clock" size=${12} /> ${p.label}
-                    </button>
-                  `)}
-                </div>
-                <label className="inline-check">
-                  <input type="checkbox" checked=${reminderForm.recurring} onChange=${(e) => setReminderForm({ ...reminderForm, recurring: e.target.checked })} />
-                  <${Icon} name="repeat" size=${14} /> Repeat this reminder
-                </label>
-                ${reminderForm.recurring && html`<input type="number" min="1" placeholder="Recurrence interval (minutes)" value=${reminderForm.recurrenceMinutes} onInput=${(e) => setReminderForm({ ...reminderForm, recurrenceMinutes: e.target.value })} />`}
-                <button disabled=${busy}><${Icon} name="bell" size=${16} /> Schedule Reminder</button>
-              </form>
-
-              <div style=${{ marginTop: "1.25rem" }}>
-                ${filteredReminders.length > 0 ? html`
-                  <div className="list">
-                    ${filteredReminders.map(r => html`
-                      <div className="list-item" key=${r.id}>
-                        <div className="list-item-content">
-                          <div className="list-item-title">${r.message}</div>
-                          <div className="list-item-meta">
-                            <span className=${`status-badge ${r.status}`}>${r.status}</span>
-                            <span><${Icon} name="send" size=${12} /> ${r.channel} → ${r.target}</span>
-                            <span><${Icon} name="clock" size=${12} /> ${formatDate(r.remind_at)} (${relativeTime(r.remind_at)})</span>
-                            ${r.is_recurring ? html`<span><${Icon} name="repeat" size=${12} /> every ${r.recurrence_minutes}m</span>` : ""}
-                            ${r.last_error ? html`<span className="error-text" title=${r.last_error}>⚠ error</span>` : ""}
-                          </div>
-                        </div>
-                        <div className="list-item-actions">
-                          ${r.status === "pending" ? html`
-                            <button className="success-ghost sm" onClick=${() => sendNow(r.id)} title="Send Now">
-                              <${Icon} name="send" size=${14} /> Send
-                            </button>
-                          ` : ""}
-                          <button className="btn-icon danger-ghost sm" onClick=${() => deleteReminder(r.id)} title="Delete">
-                            <${Icon} name="trash" size=${14} />
-                          </button>
-                        </div>
-                      </div>
-                    `)}
-                  </div>
-                ` : renderEmptyState("bell", "No reminders yet", "Schedule your first reminder using the form above.", "Focus Form", () => document.querySelector(".section-panel input")?.focus())}
-              </div>
-            </section>
-          `}
 
           <!-- ═══ HABITS SECTION ═══ -->
           ${section === "habits" && html`
