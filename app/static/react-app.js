@@ -172,7 +172,7 @@ const SECTION_META = {
   summary:  { title: "Overview",       subtitle: "Activity snapshot and operational health at a glance." },
   captures: { title: "Quick Capture",  subtitle: "Save ideas, links, and context before they're lost." },
   inbox:    { title: "Telegram Inbox", subtitle: "Review and triage incoming items from your bot." },
-  tasks:    { title: "Tasks",          subtitle: "Track priorities, execution progress and reminders." },
+  tasks:    { title: "Tasks",          subtitle: "Track priorities with optional due date and automatic alerts." },
   notes:    { title: "Encrypted Notes",subtitle: "Secure, encrypted notes stored at rest." },
   habits:   { title: "Habit Tracker",  subtitle: "Build consistent habits with daily tracking and streaks." },
   pomodoro: { title: "Focus Timer",    subtitle: "Pomodoro technique — work in focused intervals." },
@@ -598,6 +598,16 @@ function App() {
         setAppStatus("Capture deleted.", "success");
       } catch (err) { setAppStatus(`Delete failed: ${err.message}`, "error"); }
     });
+  }
+
+  async function promoteCaptureToSecureNote(id) {
+    try {
+      await api(`/api/captures/${id}/to-note`, { method: "POST" });
+      await refreshAll();
+      setAppStatus("Capture promoted to secure note.", "success");
+    } catch (err) {
+      setAppStatus(`Promote failed: ${err.message}`, "error");
+    }
   }
 
   function editCapture(c) {
@@ -1217,12 +1227,12 @@ function App() {
                 </article>
                 <article className="summary-card card-blue">
                   <div className="summary-card-icon"><${Icon} name="bell" size=${20} /></div>
-                  <div className="summary-card-label">Pending Reminders</div>
+                  <div className="summary-card-label">Scheduled Alerts</div>
                   <div className="summary-card-value">${summary?.reminders_pending ?? 0}</div>
                 </article>
                 <article className="summary-card card-teal">
                   <div className="summary-card-icon"><${Icon} name="send" size=${20} /></div>
-                  <div className="summary-card-label">Sent Today</div>
+                  <div className="summary-card-label">Alerts Sent Today</div>
                   <div className="summary-card-value">${summary?.reminders_sent_today ?? 0}</div>
                 </article>
                 <article className="summary-card card-green">
@@ -1247,7 +1257,7 @@ function App() {
               <div className="progress-grid">
                 <${ProgressBar} value=${tasksDone} max=${tasksTotal} label="Tasks Completed" color="var(--green-500)" />
                 <${ProgressBar} value=${tasksPending} max=${tasksTotal} label="Tasks Pending" color="var(--amber-600)" />
-                <${ProgressBar} value=${remindersSent} max=${remindersTotal} label="Reminders Delivered" color="var(--blue-600)" />
+                <${ProgressBar} value=${remindersSent} max=${remindersTotal} label="Alerts Delivered" color="var(--blue-600)" />
                 <${ProgressBar} value=${habitsCompletedToday} max=${habits.length || 1} label="Habits Done Today" color="var(--teal-600)" />
               </div>
             </section>
@@ -1326,6 +1336,9 @@ function App() {
                         <div className="list-item-actions">
                           <button className="btn-icon ghost sm" onClick=${() => { copyToClipboard(c.content); setAppStatus("Copied to clipboard.", "success"); }} title="Copy">
                             <${Icon} name="copy" size=${14} />
+                          </button>
+                          <button className="btn-icon ghost sm" onClick=${() => promoteCaptureToSecureNote(c.id)} title="Promote to secure note">
+                            <${Icon} name="file-lock" size=${14} />
                           </button>
                           <button className="btn-icon ghost sm" onClick=${() => editCapture(c)} title="Edit">
                             <${Icon} name="edit" size=${14} />
@@ -1420,13 +1433,13 @@ function App() {
             <section className="panel section-panel" id="section-tasks">
               <div className="section-head">
                 <h2><${Icon} name="check-square" /> Tasks</h2>
-                <p className="muted">A simple task list with optional due date and reminder time.</p>
+                <p className="muted">A simple task list with optional due date and automatic alert.</p>
               </div>
 
               <form onSubmit=${submitTask} className="stack">
                 <input required value=${taskForm.title} onInput=${(e) => setTaskForm({ ...taskForm, title: e.target.value })} placeholder="What needs to be done?" />
                 <div className="task-date-time-wrap">
-                  <label className="field-label" style=${{ marginBottom: "0.35rem" }}>Due Date & Time (Optional Reminder)</label>
+                  <label className="field-label" style=${{ marginBottom: "0.35rem" }}>Due Date & Time (Optional Alert)</label>
                   <div className="task-datetime-row">
                     <input
                       type="date"
@@ -1512,7 +1525,7 @@ function App() {
                           <div className=${`list-item-title ${t.status === "done" ? "done" : ""}`}>${t.title}</div>
                           <div className="list-item-meta">
                             ${t.due_date ? html`<span><${Icon} name="clock" size=${12} /> ${formatDate(t.due_date)} (${relativeTime(t.due_date)})</span>` : html`<span className="muted">No due date</span>`}
-                            ${t.due_date ? html`<span className="status-badge pending">reminder set</span>` : ""}
+                            ${t.due_date ? html`<span className="status-badge pending">alert scheduled</span>` : ""}
                           </div>
                         </div>
                         <div className="list-item-actions">
@@ -1522,7 +1535,7 @@ function App() {
                       </div>
                     `)}
                   </div>
-                ` : renderEmptyState("check-square", "No tasks yet", "Add a task and optional due date to get reminders.", "Focus Form", () => document.querySelector(".section-panel input")?.focus())}
+                ` : renderEmptyState("check-square", "No tasks yet", "Add a task and optional due date to schedule alerts.", "Focus Form", () => document.querySelector(".section-panel input")?.focus())}
               </div>
             </section>
           `}

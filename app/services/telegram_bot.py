@@ -18,7 +18,7 @@ from __future__ import annotations
 import threading
 import time
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -28,8 +28,10 @@ from app import models
 from app.config import settings
 from app.database import SessionLocal
 from app.services.crypto_service import decrypt_text, encrypt_text
+from app.services.datetime_service import utc_now_naive
 from app.services.media_storage import is_r2_enabled, media_object_key, put_media_to_r2
 from app.services.summary_service import get_today_summary
+from app.services.task_reminder_service import delete_task_due_reminders, upsert_task_due_reminder
 
 
 # ─── Webhook registration ─────────────────────────────────────────────────────
@@ -71,6 +73,21 @@ def delete_webhook() -> None:
 
 def handle_telegram_update(update: dict) -> None:
     """Process a single Telegram update dict."""
+    callback_query = update.get("callback_query") or {}
+    if callback_query:
+        from_user = callback_query.get("from") or {}
+        message = callback_query.get("message") or {}
+        chat = message.get("chat") or {}
+        chat_id = str(chat.get("id", "")).strip()
+        telegram_user_id = str(from_user.get("id", "")).strip()
+        callback_id = str(callback_query.get("id", "")).strip()
+        data = str(callback_query.get("data", "")).strip()
+        if chat_id and telegram_user_id and callback_id and data:
+            base_url = f"https://api.telegram.org/bot{settings.telegram_bot_token}"
+            with httpx.Client(timeout=15) as client:
+                _handle_callback_query(client, base_url, chat_id, telegram_user_id, callback_id, data)
+        return
+
     message = update.get("message") or {}
     text = (message.get("text") or "").strip()
     chat = message.get("chat") or {}
@@ -145,7 +162,7 @@ class TelegramBotWorker:
                 try:
                     params: dict = {
                         "timeout": max(settings.telegram_bot_poll_timeout_seconds, 5),
-                        "allowed_updates": '["message","web_app_data"]',
+                        "allowed_updates": '["message","web_app_data","callback_query"]',
                     }
                     if self._offset:
                         params["offset"] = self._offset
@@ -162,15 +179,8 @@ class TelegramBotWorker:
                         if update_id:
                             self._offset = update_id + 1
 
-                        message = update.get("message") or {}
-                        text = (message.get("text") or "").strip()
-                        chat = message.get("chat") or {}
-                        from_user = message.get("from") or {}
-                        chat_id = str(chat.get("id", "")).strip()
-                        telegram_user_id = str(from_user.get("id", "")).strip()
-
-                        if chat_id and telegram_user_id:
-                            _handle_message(client, base_url, chat_id, telegram_user_id, text, message)
+                        # Process message + callback_query + web_app_data uniformly.
+                        handle_telegram_update(update)
                 except Exception:
                     time.sleep(2)
 
@@ -184,52 +194,269 @@ def _send_text(client: httpx.Client, base_url: str, chat_id: str, text: str) -> 
         pass
 
 
+def _send_inline(client: httpx.Client, base_url: str, chat_id: str, text: str, keyboard: list[list[dict]]) -> None:
+    try:
+        client.post(
+            f"{base_url}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": text,
+                "reply_markup": {"inline_keyboard": keyboard},
+            },
+        )
+    except Exception:
+        pass
+
+
+def _answer_callback(client: httpx.Client, base_url: str, callback_id: str, text: str = "") -> None:
+    try:
+        payload = {"callback_query_id": callback_id}
+        if text:
+            payload["text"] = text
+            payload["show_alert"] = False
+        client.post(f"{base_url}/answerCallbackQuery", json=payload)
+    except Exception:
+        pass
+
+
+def _send_task_list_inline(client: httpx.Client, base_url: str, chat_id: str, db: Session, offset: int = 0) -> None:
+    page_size = 6
+    if offset < 0:
+        offset = 0
+
+    q = db.query(models.Task).order_by(models.Task.updated_at.desc(), models.Task.created_at.desc())
+    total = q.count()
+    tasks = q.offset(offset).limit(page_size).all()
+
+    if not tasks and offset > 0:
+        offset = max(0, total - page_size)
+        tasks = q.offset(offset).limit(page_size).all()
+
+    if not tasks:
+        _send_text(client, base_url, chat_id, "No tasks yet.")
+        return
+
+    page = (offset // page_size) + 1
+    pages = max(1, (total + page_size - 1) // page_size)
+    lines = [f"Task List (page {page}/{pages})", "Tap action for each task:"]
+    keyboard: list[list[dict]] = []
+
+    for t in tasks:
+        due = f" | due {t.due_date.strftime('%d %b %H:%M')}" if t.due_date else ""
+        status_emoji = "✅" if t.status == "done" else "🟢"
+        action_label = "Reopen" if t.status == "done" else "Done"
+        lines.append(f"{status_emoji} #{t.id} {t.title}{due}")
+        keyboard.append([
+            {"text": f"{action_label} #{t.id}", "callback_data": f"task:toggle:{t.id}"},
+            {"text": f"Delete #{t.id}", "callback_data": f"task:confirmdel:{t.id}"},
+        ])
+
+    nav: list[dict] = []
+    prev_offset = offset - page_size
+    next_offset = offset + page_size
+    if prev_offset >= 0:
+        nav.append({"text": "◀ Prev", "callback_data": f"task:list:{prev_offset}"})
+    nav.append({"text": "Refresh", "callback_data": f"task:list:{offset}"})
+    if next_offset < total:
+        nav.append({"text": "Next ▶", "callback_data": f"task:list:{next_offset}"})
+    keyboard.append(nav)
+    keyboard.append([
+        {"text": "Task Menu", "callback_data": "menu:tasks"},
+        {"text": "Summary", "callback_data": "menu:summary"},
+    ])
+
+    _send_inline(client, base_url, chat_id, "\n".join(lines), keyboard)
+
+
+def _send_bot_menu(client: httpx.Client, base_url: str, chat_id: str) -> None:
+    _send_inline(
+        client,
+        base_url,
+        chat_id,
+        "AutoHub Task Assistant\nChoose an action:",
+        [
+            [
+                {"text": "Open Task List", "callback_data": "task:list:0"},
+                {"text": "Today Summary", "callback_data": "menu:summary"},
+            ],
+            [
+                {"text": "Add Quick Task", "callback_data": "task:addquick"},
+                {"text": "Help", "callback_data": "menu:help"},
+            ],
+        ],
+    )
+
+
+def _handle_callback_query(
+    client: httpx.Client,
+    base_url: str,
+    chat_id: str,
+    telegram_user_id: str,
+    callback_id: str,
+    data: str,
+) -> None:
+    db: Session = SessionLocal()
+    try:
+        if not _is_allowed_user(db, telegram_user_id):
+            _answer_callback(client, base_url, callback_id, "Access denied")
+            return
+
+        if data == "menu:main":
+            _answer_callback(client, base_url, callback_id, "Menu")
+            _send_bot_menu(client, base_url, chat_id)
+            return
+
+        if data == "menu:tasks":
+            _answer_callback(client, base_url, callback_id, "Tasks")
+            _send_task_list_inline(client, base_url, chat_id, db, 0)
+            return
+
+        if data == "menu:summary":
+            _answer_callback(client, base_url, callback_id, "Summary")
+            summary = get_today_summary(db)
+            _send_text(
+                client,
+                base_url,
+                chat_id,
+                "Today summary:\n"
+                f"Captures: {summary.captures_today}\n"
+                f"Open tasks: {summary.tasks_open}\n"
+                f"Done today: {summary.tasks_done_today}\n"
+                f"Scheduled task alerts: {summary.reminders_pending}\n"
+                f"Alerts sent today: {summary.reminders_sent_today}",
+            )
+            return
+
+        if data == "menu:help":
+            _answer_callback(client, base_url, callback_id, "Help")
+            _send_text(
+                client,
+                base_url,
+                chat_id,
+                "Commands:\n"
+                "/task add <title>\n"
+                "/task list\n"
+                "/task done <id|title>\n"
+                "/task delete <id>\n"
+                "/summary\n"
+                "(Task due date/time = reminder)",
+            )
+            return
+
+        if data == "task:addquick":
+            now = utc_now_naive()
+            task = models.Task(title="Quick task from bot", status="todo", priority="medium", updated_at=now)
+            db.add(task)
+            db.flush()
+            upsert_task_due_reminder(db, task)
+            db.commit()
+            _answer_callback(client, base_url, callback_id, "Task added")
+            _send_text(client, base_url, chat_id, f"Task created #{task.id}")
+            _send_task_list_inline(client, base_url, chat_id, db, 0)
+            return
+
+        if data == "task:list":
+            _answer_callback(client, base_url, callback_id, "Refreshing")
+            _send_task_list_inline(client, base_url, chat_id, db, 0)
+            return
+
+        if data.startswith("task:list:"):
+            _, _, offset_raw = data.partition("task:list:")
+            try:
+                offset = int(offset_raw)
+            except Exception:
+                offset = 0
+            _answer_callback(client, base_url, callback_id, "Refreshing")
+            _send_task_list_inline(client, base_url, chat_id, db, offset)
+            return
+
+        if data.startswith("task:confirmdel:"):
+            _, _, raw_id = data.partition("task:confirmdel:")
+            if not raw_id.isdigit():
+                _answer_callback(client, base_url, callback_id, "Invalid task id")
+                return
+            task_id = int(raw_id)
+            _answer_callback(client, base_url, callback_id, "Confirm delete")
+            _send_inline(
+                client,
+                base_url,
+                chat_id,
+                f"Delete task #{task_id}?",
+                [[
+                    {"text": "Yes, delete", "callback_data": f"task:delete:{task_id}"},
+                    {"text": "Cancel", "callback_data": "task:list:0"},
+                ]],
+            )
+            return
+
+        parts = data.split(":")
+        if len(parts) == 3 and parts[0] == "task" and parts[1] in {"toggle", "delete"} and parts[2].isdigit():
+            task_id = int(parts[2])
+            task = db.query(models.Task).filter(models.Task.id == task_id).first()
+            if not task:
+                _answer_callback(client, base_url, callback_id, "Task not found")
+                return
+
+            now = utc_now_naive()
+            if parts[1] == "toggle":
+                if task.status == "done":
+                    task.status = "todo"
+                    task.completed_at = None
+                else:
+                    task.status = "done"
+                    task.completed_at = now
+                task.updated_at = now
+                upsert_task_due_reminder(db, task)
+                db.add(task)
+                db.commit()
+                toast = "Task reopened" if task.status == "todo" else "Marked done"
+                _answer_callback(client, base_url, callback_id, toast)
+                _send_text(client, base_url, chat_id, f"Task #{task.id} updated: {task.status}.")
+            else:
+                delete_task_due_reminders(db, task.id)
+                db.delete(task)
+                db.commit()
+                _answer_callback(client, base_url, callback_id, "Deleted")
+                _send_text(client, base_url, chat_id, f"Task #{task_id} deleted.")
+
+            _send_task_list_inline(client, base_url, chat_id, db, 0)
+            return
+
+        _answer_callback(client, base_url, callback_id, "Unsupported action")
+    finally:
+        db.close()
+
+
 def _send_menu(client: httpx.Client, base_url: str, chat_id: str, text: str = "Choose an action:") -> None:
-    """Send a reply keyboard menu AND an inline 'Open Dashboard' web_app button."""
+    """Send a reply keyboard menu and, when available, an inline Mini App button."""
     miniapp_url = settings.miniapp_url or ""
 
-    # Inline keyboard with Mini App button (shown above text input).
-    inline_markup = None
-    if miniapp_url:
-        inline_markup = {
-            "inline_keyboard": [
-                [
-                    {
-                        "text": "🚀 Open Dashboard",
-                        "web_app": {"url": miniapp_url},
-                    }
-                ]
-            ]
-        }
-
-    # Reply keyboard for quick command shortcuts.
     reply_keyboard = {
         "keyboard": [
             [{"text": "/summary"}, {"text": "/task list"}],
             [{"text": "/note list"}, {"text": "/inbox list"}],
-            [{"text": "/reminder list"}],
+            [{"text": "/task add Buy milk"}],
             [{"text": "/help"}],
         ],
         "resize_keyboard": True,
         "one_time_keyboard": False,
     }
     try:
-        # First send the inline keyboard with the Mini App button.
-        if inline_markup:
+        if miniapp_url:
             client.post(
                 f"{base_url}/sendMessage",
                 json={
                     "chat_id": chat_id,
-                    "text": text,
-                    "reply_markup": inline_markup,
-                    "parse_mode": "HTML",
+                    "text": "Open dashboard:",
+                    "reply_markup": {
+                        "inline_keyboard": [[{"text": "🚀 Open Dashboard", "web_app": {"url": miniapp_url}}]]
+                    },
                 },
             )
-        else:
-            client.post(
-                f"{base_url}/sendMessage",
-                json={"chat_id": chat_id, "text": text, "reply_markup": reply_keyboard},
-            )
+        client.post(
+            f"{base_url}/sendMessage",
+            json={"chat_id": chat_id, "text": text, "reply_markup": reply_keyboard, "parse_mode": "HTML"},
+        )
     except Exception:
         pass
 
@@ -342,17 +569,18 @@ def _handle_message(
 
         if lowered in {"/start", "/help", "/menu"}:
             miniapp_url = settings.miniapp_url or ""
-            miniapp_hint = f"\n\n🚀 <b>Tap the button above to open the full dashboard</b> inside Telegram." if miniapp_url else ""
-            _send_menu(
-                client, base_url, chat_id,
-                "<b>AutoHub Commands</b>\n"
-                "/id\n/menu\n/summary\n"
-                "/note add &lt;content&gt;\n/note list\n/note read &lt;id&gt;\n"
-                "/task add &lt;title&gt;\n/task done &lt;id or partial title&gt;\n/task list\n"
-                "/capture &lt;text&gt;\n/inbox list\n"
-                "/reminder list\n/remind &lt;minutes&gt; &lt;message&gt;"
-                + miniapp_hint,
+            help_text = (
+                "Task-first bot controls:\n"
+                "- /task list (inline action buttons)\n"
+                "- /task add <title>\n"
+                "- /task done <id|title>\n"
+                "- /task delete <id>\n"
+                "- /summary"
             )
+            if miniapp_url:
+                help_text += "\n\nUse the dashboard button for full UI access."
+            _send_bot_menu(client, base_url, chat_id)
+            _send_text(client, base_url, chat_id, help_text)
             return
 
         # ── Allowlist check ──
@@ -369,7 +597,6 @@ def _handle_message(
         _ALIASES = {
             "/notes": "/note list",
             "/tasks": "/task list",
-            "/reminders": "/reminder list",
             "/captures": "/capture list",
             "/inbox": "/inbox list",
         }
@@ -418,7 +645,7 @@ def _handle_message(
             if not content:
                 _send_text(client, base_url, chat_id, "Usage: /note add <content>")
                 return
-            now = datetime.utcnow()
+            now = utc_now_naive()
             note = models.EncryptedNote(title="", cipher_text=encrypt_text(content), created_at=now, updated_at=now)
             db.add(note)
             db.commit()
@@ -448,23 +675,18 @@ def _handle_message(
             if not title:
                 _send_text(client, base_url, chat_id, "Usage: /task add <title>")
                 return
-            now = datetime.utcnow()
+            now = utc_now_naive()
             task = models.Task(title=title, status="todo", priority="medium", updated_at=now)
             db.add(task)
+            db.flush()
+            upsert_task_due_reminder(db, task)
             db.commit()
             _send_text(client, base_url, chat_id, f"Task created #{task.id}")
             return
 
         # ── /task list ──
         if lowered.startswith("/task list"):
-            tasks = db.query(models.Task).order_by(models.Task.created_at.desc()).limit(10).all()
-            if not tasks:
-                _send_text(client, base_url, chat_id, "No tasks yet.")
-                return
-            lines = ["Latest tasks:"]
-            for t in tasks:
-                lines.append(f"#{t.id} [{t.status}] {t.title}")
-            _send_text(client, base_url, chat_id, "\n".join(lines))
+            _send_task_list_inline(client, base_url, chat_id, db, 0)
             return
 
         # ── /task done <id or partial title> ──
@@ -494,13 +716,33 @@ def _handle_message(
                 _send_text(client, base_url, chat_id, f"Task not found: {arg!r}")
                 return
 
-            now = datetime.utcnow()
+            now = utc_now_naive()
             task.status = "done"
             task.completed_at = now
             task.updated_at = now
+            upsert_task_due_reminder(db, task)
             db.add(task)
             db.commit()
             _send_text(client, base_url, chat_id, f"Task #{task.id} '{task.title}' marked done.")
+            return
+
+        # ── /task delete <id> ──
+        if lowered.startswith("/task delete"):
+            parts = text.split(" ", 2)
+            if len(parts) < 3 or not parts[2].strip().isdigit():
+                _send_text(client, base_url, chat_id, "Usage: /task delete <id>")
+                return
+
+            task_id = int(parts[2].strip())
+            task = db.query(models.Task).filter(models.Task.id == task_id).first()
+            if not task:
+                _send_text(client, base_url, chat_id, "Task not found.")
+                return
+
+            delete_task_due_reminders(db, task.id)
+            db.delete(task)
+            db.commit()
+            _send_text(client, base_url, chat_id, f"Task #{task_id} deleted.")
             return
 
         # ── /capture list ──
@@ -546,53 +788,9 @@ def _handle_message(
             _send_text(client, base_url, chat_id, "\n".join(lines))
             return
 
-        # ── /remind ──
-        if lowered.startswith("/remind "):
-            parts = text.split(" ", 2)
-            if len(parts) < 3:
-                _send_text(client, base_url, chat_id, "Usage: /remind <minutes> <message>")
-                return
-            try:
-                minutes = int(parts[1])
-            except Exception:
-                _send_text(client, base_url, chat_id, "Minutes must be a number.")
-                return
-            if minutes < 1:
-                _send_text(client, base_url, chat_id, "Minutes must be >= 1.")
-                return
-            msg = parts[2].strip()
-            if not msg:
-                _send_text(client, base_url, chat_id, "Message is required.")
-                return
-            reminder = models.Reminder(
-                message=msg,
-                channel="telegram",
-                target=chat_id,
-                remind_at=datetime.utcnow() + timedelta(minutes=minutes),
-                is_recurring=False,
-                recurrence_minutes=None,
-                status="pending",
-            )
-            db.add(reminder)
-            db.commit()
-            _send_text(client, base_url, chat_id, f"Reminder scheduled in {minutes} minute(s).")
-            return
-
-        # ── /reminder list ──
-        if lowered.startswith("/reminder list"):
-            reminders = (
-                db.query(models.Reminder)
-                .order_by(models.Reminder.remind_at.asc())
-                .limit(10)
-                .all()
-            )
-            if not reminders:
-                _send_text(client, base_url, chat_id, "No reminders yet.")
-                return
-            lines = ["Upcoming reminders:"]
-            for r in reminders:
-                lines.append(f"#{r.id} [{r.status}] {r.remind_at.isoformat()} - {r.message[:50]}")
-            _send_text(client, base_url, chat_id, "\n".join(lines))
+        # ── Deprecated reminder commands (task-centric model) ──
+        if lowered.startswith("/remind ") or lowered.startswith("/reminder list"):
+            _send_text(client, base_url, chat_id, "Reminders are task-based now. Create or edit a task with due date/time.")
             return
 
         # ── /summary ──
@@ -604,11 +802,11 @@ def _handle_message(
                 f"Captures: {summary.captures_today}\n"
                 f"Open tasks: {summary.tasks_open}\n"
                 f"Done today: {summary.tasks_done_today}\n"
-                f"Pending reminders: {summary.reminders_pending}\n"
-                f"Sent today: {summary.reminders_sent_today}",
+                f"Scheduled task alerts: {summary.reminders_pending}\n"
+                f"Alerts sent today: {summary.reminders_sent_today}",
             )
             return
 
-        _send_text(client, base_url, chat_id, "Unknown command. Use /help")
+        _send_text(client, base_url, chat_id, "Unknown command. Use /menu for quick actions.")
     finally:
         db.close()

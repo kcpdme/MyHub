@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import re
 
 from sqlalchemy.orm import Session
 
@@ -7,6 +8,9 @@ from app.services.datetime_service import utc_now_naive
 from app.services.channels.telegram_sender import send_telegram
 from app.services.channels.email_sender import send_email
 from app.services import webhook_dispatcher
+
+
+TASK_MARKER_RE = re.compile(r"^\[task:\d+\]\s*")
 
 
 def send_channel_message(channel: str, target: str, message: str) -> tuple[bool, str]:
@@ -23,7 +27,8 @@ def send_channel_message(channel: str, target: str, message: str) -> tuple[bool,
 
 
 def dispatch_reminder(db: Session, reminder: models.Reminder) -> tuple[bool, str]:
-    ok, detail = send_channel_message(reminder.channel, reminder.target, reminder.message)
+    outbound_message = TASK_MARKER_RE.sub("", reminder.message or "").strip() or "Task reminder"
+    ok, detail = send_channel_message(reminder.channel, reminder.target, outbound_message)
 
     log = models.DeliveryLog(
         reminder_id=reminder.id,
@@ -38,24 +43,28 @@ def dispatch_reminder(db: Session, reminder: models.Reminder) -> tuple[bool, str
         if reminder.is_recurring and reminder.recurrence_minutes:
             reminder.status = "pending"
             reminder.remind_at = utc_now_naive() + timedelta(minutes=reminder.recurrence_minutes)
+            reminder.last_error = ""
+            reminder.sent_at = utc_now_naive()
+            db.add(reminder)
         else:
-            reminder.status = "sent"
-        reminder.last_error = ""
-        reminder.sent_at = utc_now_naive()
+            # One-shot reminders are ephemeral; keep audit in DeliveryLog only.
+            db.delete(reminder)
 
         # Fire outbound webhook so external systems know a reminder was sent.
         webhook_dispatcher.fire_event("reminder.sent", {
             "id": reminder.id,
-            "message": reminder.message,
+            "message": outbound_message,
             "channel": reminder.channel,
             "target": reminder.target,
-            "sent_at": reminder.sent_at.isoformat(),
+            "sent_at": utc_now_naive().isoformat(),
         })
     else:
         reminder.status = "failed"
         reminder.last_error = detail
+        db.add(reminder)
 
-    db.add(reminder)
     db.commit()
+    if ok and not reminder.is_recurring:
+        return ok, detail
     db.refresh(reminder)
     return ok, detail

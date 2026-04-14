@@ -1,28 +1,28 @@
 /* ═══════════════════════════════════════════════════════════
-  AutoHub — Matte Enterprise Palette
-  Slate Base · Rose/Amber/Azure Accents · Professional
+  AutoHub — Sand & Green Palette
+  Warm Sand Base · Olive/Sage Accents · Minimal Natural
   ═══════════════════════════════════════════════════════════ */
 
 :root {
   /* Canvas */
-  --canvas:         #f0f1f5;
-  --canvas-deep:    #e8eaf0;
+  --canvas:         #f3efe4;
+  --canvas-deep:    #ebe4d5;
 
   /* Light surfaces */
-  --surface:        #ffffff;
-  --surface-2:      #f7f8fb;
-  --surface-3:      #eff1f6;
-  --surface-hover:  #eceff5;
+  --surface:        #fffdf7;
+  --surface-2:      #f7f3e8;
+  --surface-3:      #efe8d8;
+  --surface-hover:  #ebe3d2;
 
   /* Sidebar (dark) */
-  --sidebar-bg:     #1f2430;
+  --sidebar-bg:     #2a3127;
   --sidebar-border: rgba(255,255,255,0.08);
 
   /* Text on light */
-  --ink-1:          #1a2232;
-  --ink-2:          #334156;
-  --ink-3:          #637187;
-  --ink-4:          #97a2b4;
+  --ink-1:          #2a3222;
+  --ink-2:          #46553a;
+  --ink-3:          #6a785f;
+  --ink-4:          #96a189;
 
   /* Text on dark sidebar */
   --ink-light-1:    #ebeff8;
@@ -30,36 +30,36 @@
   --ink-light-3:    #8897b3;
 
   /* Borders */
-  --line:           #d3d9e5;
-  --line-soft:      #e1e6f0;
+  --line:           #d7ceb8;
+  --line-soft:      #e4dbc8;
 
-  /* Brand — enterprise azure */
-  --green-900:      #133a66;
-  --green-800:      #1c4c85;
-  --green-700:      #2461a8;
-  --green-600:      #2f77c8;
-  --green-500:      #3b8ee0;
-  --green-400:      #66a9e8;
-  --green-300:      #8ec0ef;
-  --green-200:      #b8d8f7;
-  --green-100:      #dcebfc;
-  --green-50:       #eff5ff;
+  /* Brand — olive/sage green */
+  --green-900:      #2f4a2f;
+  --green-800:      #3f5e3c;
+  --green-700:      #50754a;
+  --green-600:      #658f5f;
+  --green-500:      #78a972;
+  --green-400:      #8fbd89;
+  --green-300:      #a6ce9f;
+  --green-200:      #c5e0bf;
+  --green-100:      #deeed8;
+  --green-50:       #f1f8ed;
 
   /* Semantic */
-  --red-600:        #b14466;
-  --red-100:        rgba(177,68,102,0.10);
-  --red-border:     rgba(177,68,102,0.22);
+  --red-600:        #b65f4d;
+  --red-100:        rgba(182,95,77,0.10);
+  --red-border:     rgba(182,95,77,0.22);
 
-  --amber-600:      #a66a17;
-  --amber-100:      rgba(166,106,23,0.10);
-  --amber-border:   rgba(166,106,23,0.24);
+  --amber-600:      #9e7a36;
+  --amber-100:      rgba(158,122,54,0.10);
+  --amber-border:   rgba(158,122,54,0.24);
 
-  --blue-600:       #2d5fba;
-  --blue-100:       rgba(45,95,186,0.10);
-  --blue-border:    rgba(45,95,186,0.24);
+  --blue-600:       #5f7b4a;
+  --blue-100:       rgba(95,123,74,0.10);
+  --blue-border:    rgba(95,123,74,0.24);
 
-  --teal-600:       #2f7d89;
-  --teal-100:       rgba(47,125,137,0.10);
+  --teal-600:       #4f7d68;
+  --teal-100:       rgba(79,125,104,0.10);
 
   /* Shadows — neutral matte */
   --sh-xs: 0 1px 2px rgba(23,30,44,0.05), 0 1px 4px rgba(23,30,44,0.04);
@@ -93,31 +93,31 @@
    DARK MODE
    ═══════════════════════════════════ */
 html.dark {
-  --canvas:         #121620;
-  --canvas-deep:    #0e121b;
-  --surface:        #1a1f2b;
-  --surface-2:      #202635;
-  --surface-3:      #252d3f;
-  --surface-hover:  #2a3348;
-  --sidebar-bg:     #0f131d;
+  --canvas:         #1e241a;
+  --canvas-deep:    #181d15;
+  --surface:        #262e21;
+  --surface-2:      #2e3728;
+  --surface-3:      #374131;
+  --surface-hover:  #414b3b;
+  --sidebar-bg:     #171d13;
   --sidebar-border: rgba(255,255,255,0.06);
-  --ink-1:          #e6ebf7;
-  --ink-2:          #bcc8de;
-  --ink-3:          #8b99b3;
-  --ink-4:          #6f7f9d;
+  --ink-1:          #eaf2df;
+  --ink-2:          #c7d6bc;
+  --ink-3:          #9fb194;
+  --ink-4:          #85987c;
   --ink-light-1:    #eef3ff;
   --ink-light-2:    #c2cce0;
   --ink-light-3:    #93a2bf;
-  --line:           #30384d;
-  --line-soft:      #2a3245;
-  --green-50:       rgba(59,142,224,0.12);
-  --green-100:      rgba(59,142,224,0.19);
+  --line:           #4b5742;
+  --line-soft:      #414c39;
+  --green-50:       rgba(120,169,114,0.16);
+  --green-100:      rgba(120,169,114,0.24);
   --red-100:        rgba(177,68,102,0.16);
   --red-border:     rgba(177,68,102,0.28);
   --amber-100:      rgba(166,106,23,0.16);
   --amber-border:   rgba(166,106,23,0.28);
-  --blue-100:       rgba(45,95,186,0.16);
-  --blue-border:    rgba(45,95,186,0.28);
+  --blue-100:       rgba(95,123,74,0.20);
+  --blue-border:    rgba(95,123,74,0.32);
   --teal-100:       rgba(47,125,137,0.16);
   --sh-xs: 0 1px 2px rgba(0,0,0,0.3);
   --sh-sm: 0 2px 6px rgba(0,0,0,0.35);
@@ -128,8 +128,8 @@ html.dark {
 
 html.dark body::before {
   background:
-    radial-gradient(ellipse 60% 45% at 8% 0%,   rgba(59,142,224,0.10), transparent),
-    radial-gradient(ellipse 45% 45% at 92% 98%,  rgba(177,68,102,0.08), transparent);
+    radial-gradient(ellipse 60% 45% at 8% 0%,   rgba(120,169,114,0.12), transparent),
+    radial-gradient(ellipse 45% 45% at 92% 98%,  rgba(158,122,54,0.10), transparent);
 }
 
 html.dark .card-green  { background: linear-gradient(160deg, rgba(59,142,224,0.12), var(--surface) 55%); }
@@ -161,8 +161,8 @@ body {
 body::before {
   content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
   background:
-    radial-gradient(ellipse 60% 45% at 8% 0%,   rgba(59,142,224,0.06), transparent),
-    radial-gradient(ellipse 45% 45% at 92% 98%,  rgba(177,68,102,0.04), transparent);
+    radial-gradient(ellipse 60% 45% at 8% 0%,   rgba(120,169,114,0.08), transparent),
+    radial-gradient(ellipse 45% 45% at 92% 98%,  rgba(158,122,54,0.05), transparent);
 }
 button, input, select, textarea { font: inherit; color: inherit; }
 a { color: var(--green-700); text-decoration: none; }

@@ -650,29 +650,10 @@ def list_reminders(
 
 @router.post("/reminders", response_model=schemas.ReminderOut)
 def create_reminder(payload: schemas.ReminderCreate, db: Session = Depends(get_db)):
-    channel = payload.channel.lower().strip()
-    if channel not in {"telegram", "email"}:
-        raise HTTPException(status_code=400, detail="channel must be telegram or email")
-
-    if payload.is_recurring and payload.recurrence_minutes is None:
-        raise HTTPException(status_code=400, detail="recurrence_minutes is required when is_recurring=true")
-
-    recurrence_minutes = payload.recurrence_minutes if payload.is_recurring else None
-    reminder = models.Reminder(
-        message=payload.message.strip(),
-        channel=channel,
-        target=payload.target.strip(),
-        remind_at=normalize_client_datetime(payload.remind_at),
-        is_recurring=payload.is_recurring,
-        recurrence_minutes=recurrence_minutes,
-        status="pending",
+    raise HTTPException(
+        status_code=400,
+        detail="Direct reminder creation is disabled. Set due_date on a task instead.",
     )
-    db.add(reminder)
-    _audit(db, "reminder", None, "created")
-    db.commit()
-    db.refresh(reminder)
-    webhook_dispatcher.fire_event("reminder.created", {"id": reminder.id, "message": reminder.message[:100]})
-    return reminder
 
 
 @router.post("/reminders/{reminder_id}/send-now")

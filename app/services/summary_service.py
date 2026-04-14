@@ -25,10 +25,10 @@ def get_today_summary(db: Session) -> SummaryOut:
         .scalar() or 0
     )
     reminders_sent_today = (
-        db.query(func.count(models.Reminder.id))
-        .filter(models.Reminder.sent_at.isnot(None))
-        .filter(models.Reminder.sent_at >= day_start)
-        .filter(models.Reminder.sent_at < day_end)
+        db.query(func.count(models.DeliveryLog.id))
+        .filter(models.DeliveryLog.status == "sent")
+        .filter(models.DeliveryLog.created_at >= day_start)
+        .filter(models.DeliveryLog.created_at < day_end)
         .scalar() or 0
     )
     notes_total = db.query(func.count(models.EncryptedNote.id)).scalar() or 0
